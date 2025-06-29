@@ -27,6 +27,6 @@ include = ["pyproject.toml", "ct_log/**/*.py"]
 extend-select = ["I"]  # Add import sorting
 
 [tool.ruff.lint.isort]
-known-first-party = ["ct_log"]
+known-first-party = ["src"]
 force-sort-within-sections = true
 
