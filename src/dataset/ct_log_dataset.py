@@ -74,7 +74,7 @@ class CTLogDataset(Dataset):
             idx: Index of the item to retrieve.
 
         Returns:
-            A dictionary with keys 'image' and 'annotation'.
+            dict[str, Path | torch.Tensor]:
         """
         image_path = self.image_paths[idx]
         image = self.to_tensor(Image.open(image_path).convert("RGB"))
@@ -85,37 +85,27 @@ class CTLogDataset(Dataset):
         import plotly.express as px
 
         # TODO: Sorting is not enough, some priority mapper might be needed
-        mask = torch.zeros(image.shape[1:], dtype=torch.int64)
-        for obj in sorted(
-            annotation["objects"],
-            key=lambda obj: self.class_to_id[obj["classTitle"].lower().replace(" ", "_")],
-            reverse=True,
-        ):
+        mask = torch.zeros(len(self.class_to_id), *image.shape[1:], dtype=torch.int64)
+        for obj in annotation["objects"]:
             if obj["geometryType"] == "point":
                 # TODO: Handle point geometry type
                 continue
 
             class_id = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
-            if class_id == 0:
-                continue
-
             x, y = obj["bitmap"]["origin"]
-            bitmap_mask = base64_2_mask(obj["bitmap"]["data"]) * class_id
 
-            # TODO: This overwrites the mask with zeros from bitmap, use torch.where
-            # mask[y:y+bitmap_mask.shape[0], x:x+bitmap_mask.shape[1]] = bitmap_mask
+            bitmap_mask = base64_to_mask(obj["bitmap"]["data"]) * class_id
+            mask_slice = mask[class_id, y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]]
 
-            mask_slice = mask[y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]]
-            mask[y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]] = torch.where(
+            mask[class_id, y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]] = torch.where(
                 bitmap_mask != 0, bitmap_mask, mask_slice,
             )
 
-            # torch.where(bitmap_mask.bool(), mask[y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]], class_id)
-
-        px.imshow(mask).show()
+            px.imshow(mask[class_id], title=f"{obj['classTitle']} - {class_id}").show()
 
         return {
             "image": image,
+            "mask": mask,
             "path": image_path,
         }
 
