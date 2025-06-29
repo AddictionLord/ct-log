@@ -95,19 +95,15 @@ class CTLogDataset(Dataset):
             x, y = obj["bitmap"]["origin"]
 
             bitmap_mask = base64_to_mask(obj["bitmap"]["data"]) * class_id
-            mask_slice = mask[class_id, y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]]
+            mask_slice = mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]]
 
-            mask[class_id, y:y + bitmap_mask.shape[0], x:x + bitmap_mask.shape[1]] = torch.where(
+            mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]] = torch.where(
                 bitmap_mask != 0, bitmap_mask, mask_slice,
             )
 
             px.imshow(mask[class_id], title=f"{obj['classTitle']} - {class_id}").show()
 
-        return {
-            "image": image,
-            "mask": mask,
-            "path": image_path,
-        }
+        return {"image": image, "mask": mask, "path": image_path}
 
 
 def base64_to_mask(string: str) -> torch.Tensor:
