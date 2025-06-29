@@ -186,3 +186,5 @@ cython_debug/
 .pypirc
 
 _ccds
+*_local.sh
+*_local.yaml
