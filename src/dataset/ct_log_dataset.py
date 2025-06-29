@@ -120,8 +120,17 @@ class CTLogDataset(Dataset):
         }
 
 
-def base64_2_mask(s):
-    z = zlib.decompress(base64.b64decode(s))
-    n = np.fromstring(z, np.uint8)
+def base64_to_mask(string: str) -> torch.Tensor:
+    """Converts a base64 encoded string to a boolean mask tensor.
+
+    Args:
+        string: A string containing base64 encoded mask data.
+
+    Returns:
+        torch.Tensor: [H, W] dtype: bool, True indicates the presence of a pixel in the mask.
+    """
+    z = zlib.decompress(base64.b64decode(string))
+    n = np.frombuffer(z, np.uint8)
     mask = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)[:, :, 3].astype(bool)
+
     return torch.from_numpy(mask)
