@@ -4,6 +4,7 @@ torchvision==0.21.0+cu118
 torchmetrics
 pandas
 numpy
+opencv-python
 tqdm
 mlflow
 plotly
