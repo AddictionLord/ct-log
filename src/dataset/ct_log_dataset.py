@@ -103,7 +103,10 @@ class CTLogDataset(Dataset):
                 bitmap_mask != 0, bitmap_mask, mask_slice,
             )
 
-            px.imshow(mask[class_id], title=f"{obj['classTitle']} - {class_id}").show()
+            # px.imshow(mask[class_id], title=f"{obj['classTitle']} - {class_id}").show()
+
+        mask = self.merge_overlapping_mask(mask)
+        px.imshow(mask, title=str(image_path)).show()
 
         return {"image": image, "mask": mask, "path": image_path}
 
