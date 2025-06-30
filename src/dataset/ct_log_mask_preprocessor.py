@@ -40,8 +40,6 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         with open(annotation_path := self.annotation_paths[idx], "r") as f:
             annotation = json.load(f)
 
-        import plotly.express as px
-
         # TODO: Sorting is not enough, some priority mapper might be needed
         mask = torch.zeros(len(self.class_to_id), *image.shape[1:], dtype=torch.int64)
         for obj in annotation["objects"]:
@@ -63,10 +61,7 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
                 bitmap_mask != 0, bitmap_mask, mask_slice,
             )
 
-            # px.imshow(mask[class_id], title=f"{obj['classTitle']} - {class_id}").show()
-
         mask = self.merge_overlapping_masks(mask)
-        px.imshow(mask, title=str(image_path)).show()
 
         return {"image": image, "mask": mask, "path": image_path}
 
