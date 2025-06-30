@@ -93,6 +93,10 @@ class CTLogDataset(Dataset):
                 # TODO: Handle point geometry type
                 continue
 
+            if obj["geometryType"] == "polygon":
+                # TODO: Handle polygon geometry type
+                continue
+
             class_id = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
             x, y = obj["bitmap"]["origin"]
 
