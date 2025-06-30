@@ -11,6 +11,8 @@ import torch
 from torch.utils.data import Dataset
 import torchvision
 
+from src.utils.mask import base64_to_mask
+
 
 class CTLogDataset(Dataset):
     """Serves to load CT log dataset in the Supervisely format.
@@ -106,17 +108,45 @@ class CTLogDataset(Dataset):
         return {"image": image, "mask": mask, "path": image_path}
 
 
-def base64_to_mask(string: str) -> torch.Tensor:
-    """Converts a base64 encoded string to a boolean mask tensor.
+    def merge_overlapping_mask(self, mask: torch.Tensor) -> torch.Tensor:
+        """Creates a composite mask for visualization where higher priority classes override lower ones.
 
-    Args:
-        string: A string containing base64 encoded mask data.
+        Args:
+            mask: Multi-class mask tensor of shape [C, H, W]
 
-    Returns:
-        torch.Tensor: [H, W] dtype: bool, True indicates the presence of a pixel in the mask.
-    """
-    z = zlib.decompress(base64.b64decode(string))
-    n = np.frombuffer(z, np.uint8)
-    mask = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)[:, :, 3].astype(bool)
+        Returns:
+            torch.Tensor: Single channel mask [H, W] with class IDs, prioritized by importance
+        """
+        class_priority = [
+            "knot_sound",
+            "crack",
+            "insects",
+            "rot",
+            "resign_pocket",
+            "pith",
+            "moisture",
+            "moisture_real",
+            "compression_wood",
+            "wood",
+            "background",
+        ]
 
-    return torch.from_numpy(mask)
+        priority_map = {self.class_to_id[cls]: idx for idx, cls in enumerate(class_priority)}
+        composite_mask = torch.zeros(mask.shape[1:], dtype=torch.int64)
+
+        for class_id in range(mask.shape[0]):
+            class_mask = mask[class_id] > 0
+            if class_mask.any():
+                current_priority = priority_map.get(class_id, len(class_priority))
+
+                update_mask = class_mask & (composite_mask == 0)
+                for existing_val in composite_mask[class_mask].unique():
+                    if existing_val == 0:
+                        continue
+                    existing_class_priority = priority_map.get(int(existing_val), len(class_priority))
+                    if current_priority < existing_class_priority:
+                        update_mask |= (composite_mask == existing_val) & class_mask
+
+                composite_mask[update_mask] = class_id
+
+        return composite_mask
