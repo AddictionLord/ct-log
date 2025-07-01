@@ -44,11 +44,11 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         mask = torch.zeros(len(self.class_to_id), *image.shape[1:], dtype=torch.int64)
         for obj in annotation["objects"]:
             if obj["geometryType"] == "point":
-                # TODO: Handle point geometry type
+                mask = self.draw_point_into_mask(mask, obj)
                 continue
 
             if obj["geometryType"] == "polygon":
-                # TODO: Handle polygon geometry type
+                mask = self.draw_polygon_into_mask(mask, obj)
                 continue
 
             if obj["geometryType"] == "bitmap":
@@ -61,6 +61,12 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         mask = self.merge_overlapping_masks(mask)
 
         return {"image": image, "mask": mask, "path": image_path}
+
+    def draw_point_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
+        return mask
+
+    def draw_polygon_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
+        return mask
 
     def draw_bitmap_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
         """Draws a bitmap mask into the provided multi-class mask tensor
