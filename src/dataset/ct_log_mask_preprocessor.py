@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import torch
 
 from src.dataset.ct_log_dataset_base import CTLogDatasetBase
@@ -66,6 +66,28 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         return mask
 
     def draw_polygon_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
+        """Draws a polygon into the provided multi-class mask tensor.
+
+        Args:
+            mask: [C, H, W] Multi-class mask tensor.
+            obj: Object containing polygon data and class information.
+
+        Returns:
+            torch.Tensor: [C, H, W] Multi-class mask tensor with the polygon drawn in.
+        """
+        polygon: list[list[int]] = obj["points"]["exterior"]
+        class_id: int = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
+
+        height, width = mask.shape[1], mask.shape[2]
+        pil_mask = Image.new("L", (width, height), 0)
+
+        draw = ImageDraw.Draw(pil_mask)
+        flat_points = [coord for point in polygon for coord in point]
+        draw.polygon(flat_points, fill=1)
+
+        polygon_tensor = torch.tensor(list(pil_mask.getdata())).reshape(height, width)
+        mask[class_id] = torch.where(polygon_tensor > 0, class_id, mask[class_id])
+
         return mask
 
     def draw_bitmap_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
