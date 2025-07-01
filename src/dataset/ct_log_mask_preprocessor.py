@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from PIL import Image
 import torch
@@ -51,19 +51,38 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
                 # TODO: Handle polygon geometry type
                 continue
 
-            class_id = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
-            x, y = obj["bitmap"]["origin"]
+            if obj["geometryType"] == "bitmap":
+                mask = self.draw_bitmap_into_mask(mask, obj)
 
-            bitmap_mask = base64_to_mask(obj["bitmap"]["data"]) * class_id
-            mask_slice = mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]]
-
-            mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]] = torch.where(
-                bitmap_mask != 0, bitmap_mask, mask_slice,
-            )
+            else:
+                message = f"Unsupported geometry type: {obj['geometryType']}"
+                raise ValueError(message)
 
         mask = self.merge_overlapping_masks(mask)
 
         return {"image": image, "mask": mask, "path": image_path}
+
+    def draw_bitmap_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
+        """Draws a bitmap mask into the provided multi-class mask tensor
+
+        Args:
+            mask: [C, H, W] Multi-class mask tensor.
+            obj: Object containing bitmap data and class information.
+
+        Returns:
+            torch.Tensor: [C, H, W] Multi-class mask tensor with the bitmap drawn in.
+        """
+        class_id = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
+        x, y = obj["bitmap"]["origin"]
+
+        bitmap_mask = base64_to_mask(obj["bitmap"]["data"]) * class_id
+        mask_slice = mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]]
+
+        mask[class_id, y : y + bitmap_mask.shape[0], x : x + bitmap_mask.shape[1]] = torch.where(
+            bitmap_mask != 0, bitmap_mask, mask_slice,
+        )
+
+        return mask
 
     def merge_overlapping_masks(self, mask: torch.Tensor) -> torch.Tensor:
         """Creates a composite mask for visualization where higher priority classes override lower ones.
