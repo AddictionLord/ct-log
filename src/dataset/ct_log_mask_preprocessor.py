@@ -62,7 +62,30 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
 
         return {"image": image, "mask": mask, "path": image_path}
 
-    def draw_point_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
+    def draw_point_into_mask(self, mask: torch.Tensor, obj: dict[str, Any], blob_radius: int = 3) -> torch.Tensor:
+        """Draws a point into the provided multi-class mask tensor.
+
+        Args:
+            mask: [C, H, W] Multi-class mask tensor.
+            obj: Object containing point data and class information.
+            blob_radius: Radius of the point to be drawn.
+
+        Returns:
+            torch.Tensor: [C, H, W] Multi-class mask tensor with the point drawn in.
+        """
+        points = obj["points"]["exterior"]
+        class_id: int = self.class_to_id[obj["classTitle"].lower().replace(" ", "_")]
+
+        height, width = mask.shape[1], mask.shape[2]
+        pil_mask = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(pil_mask)
+
+        for x, y in points:
+            draw.ellipse([x - blob_radius, y - blob_radius, x + blob_radius, y + blob_radius], fill=1)
+
+            point_tensor = torch.tensor(list(pil_mask.getdata())).reshape(height, width)
+            mask[class_id] = torch.where(point_tensor > 0, class_id, mask[class_id])
+
         return mask
 
     def draw_polygon_into_mask(self, mask: torch.Tensor, obj: dict[str, Any]) -> torch.Tensor:
