@@ -40,7 +40,6 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         with open(annotation_path := self.annotation_paths[idx], "r") as f:
             annotation = json.load(f)
 
-        # TODO: Sorting is not enough, some priority mapper might be needed
         mask = torch.zeros(len(self.class_to_id), *image.shape[1:], dtype=torch.int64)
         for obj in annotation["objects"]:
             if obj["geometryType"] == "point":
