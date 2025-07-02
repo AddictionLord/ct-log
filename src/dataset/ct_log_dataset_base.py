@@ -41,7 +41,7 @@ class CTLogDatasetBase(Dataset):
         "wood": 10,
     }
 
-    def __init__(self, data_dir: str) -> None:
+    def __init__(self, data_dir: str | Path) -> None:
         self.data_dir = Path(data_dir)
         if not self.data_dir.exists():
             message = f"Data directory {data_dir} does not exist."
@@ -78,4 +78,4 @@ class CTLogDatasetBase(Dataset):
         with self.annotation_paths[idx].open("r") as f:
             annotation = json.load(f)
 
-        return {"image": image, "annotation": annotation, "path": image_path}
+        return {"image": image, "annotation": annotation, "path": str(image_path)}
