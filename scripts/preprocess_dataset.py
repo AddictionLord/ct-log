@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import TYPE_CHECKING
+import warnings
 
 import torch
 import torchvision
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
     from PIL.Image import Image
 
 
-def preprocess_dataset(src_dir: Path, out_dir: Path, workers: int = 2) -> None:
+def preprocess_dataset(src_dir: Path, out_dir: Path) -> None:
     """_summary_
 
     Args:
@@ -22,12 +23,14 @@ def preprocess_dataset(src_dir: Path, out_dir: Path, workers: int = 2) -> None:
     """
     to_pil_image = torchvision.transforms.ToPILImage()
     out_dir.mkdir(parents=True, exist_ok=True)
-    dataloader = torch.utils.data.DataLoader(
-        CTLogMaskPreprocessor(data_dir=src_dir), batch_size=1, shuffle=False, num_workers=workers,
-    )
+    dataset = CTLogMaskPreprocessor(data_dir=src_dir)
 
-    for _, batch in enumerate(tqdm(dataloader, desc="Processing dataset", unit="item")):
-        mask, path = batch["mask"][0], Path(batch["path"][0])
+    for _, batch in enumerate(tqdm(dataset, desc="Processing dataset", unit="item")):
+        mask, path = batch["mask"], Path(batch["path"])
+
+        if batch["pith"] is None:
+            message = f"Pith is None for image {path.name}. The annotation may be missing or incomplete."
+            warnings.warn(message)
 
         mask_image: Image = to_pil_image(mask.to(torch.float32))
         mask_image.save(out_dir / path.name)
