@@ -1,7 +1,8 @@
-from abc import abstractmethod
+import json
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
+from PIL import Image
 import torch
 from torch.utils.data import Dataset
 import torchvision
@@ -62,6 +63,19 @@ class CTLogDatasetBase(Dataset):
     def __len__(self) -> int:
         return len(self.annotation_paths)
 
-    @abstractmethod
-    def __getitem__(self, idx: int) -> dict[str, Path | torch.Tensor]:
-        ...
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        """Returns a dictionary containing the image and its corresponding annotation.
+
+        Args:
+            idx:
+
+        Returns:
+            dict[str, Any]:
+        """
+        image_path = self.image_paths[idx]
+        image = self.to_tensor(Image.open(image_path).convert("RGB"))
+
+        with self.annotation_paths[idx].open("r") as f:
+            annotation = json.load(f)
+
+        return {"image": image, "annotation": annotation, "path": image_path}
