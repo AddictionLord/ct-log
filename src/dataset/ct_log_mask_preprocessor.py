@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -25,7 +24,7 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         "background",
     ]
 
-    def __getitem__(self, idx: int) -> dict[str, Path | torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, Path | torch.Tensor | None]:
         """Returns a dictionary containing the image and its corresponding annotation.
 
         Args:
@@ -34,14 +33,11 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
         Returns:
             dict[str, Path | torch.Tensor]:
         """
-        image_path = self.image_paths[idx]
-        image = self.to_tensor(Image.open(image_path).convert("RGB"))
+        data = super().__getitem__(idx)
 
-        with open(annotation_path := self.annotation_paths[idx], "r") as f:
-            annotation = json.load(f)
-
-        mask = torch.zeros(len(self.class_to_id), *image.shape[1:], dtype=torch.int64)
-        for obj in annotation["objects"]:
+        pith = None
+        mask = torch.zeros(len(self.class_to_id), *data["image"].shape[1:], dtype=torch.int64)
+        for obj in data["annotation"]["objects"]:
             if obj["geometryType"] == "point":
                 mask = self.draw_point_into_mask(mask, obj)
                 pith = torch.tensor(obj["points"]["exterior"][0])
@@ -56,9 +52,9 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
                 message = f"Unsupported geometry type: {obj['geometryType']}"
                 raise ValueError(message)
 
-        mask = self.merge_overlapping_masks(mask)
+        data.update({"mask": self.merge_overlapping_masks(mask), "pith": pith})
 
-        return {"image": image, "mask": mask, "pith": pith, "path": image_path}
+        return data
 
     def draw_point_into_mask(self, mask: torch.Tensor, obj: dict[str, Any], blob_radius: int = 3) -> torch.Tensor:
         """Draws a point into the provided multi-class mask tensor.
