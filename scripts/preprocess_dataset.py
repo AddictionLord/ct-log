@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 import warnings
@@ -50,15 +51,17 @@ def main() -> None:
         default="data/processed/set_24",
         help="Directory to save the processed dataset.",
     )
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=2,
-        help="Number of worker threads for data loading.",
-    )
     args = parser.parse_args()
 
-    preprocess_dataset(args.source_data_dir, args.output_data_dir / "mask")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logger = logging.getLogger(__name__)
+
+    logger.info("Source data directory: %s", args.source_data_dir)
+    logger.info("Output data directory: %s", args.output_data_dir)
+
+    preprocess_dataset(args.source_data_dir, out_path := (args.output_data_dir / "mask"))
+
+    logger.info("Dataset preprocessing completed. Output saved to %s", out_path)
 
 
 if __name__ == "__main__":
