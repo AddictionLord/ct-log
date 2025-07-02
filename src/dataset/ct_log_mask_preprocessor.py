@@ -139,17 +139,18 @@ class CTLogMaskPreprocessor(CTLogDatasetBase):
             torch.Tensor: Single channel mask [H, W] with class IDs, prioritized by importance
         """
         priority_map = {self.class_to_id[cls]: idx for idx, cls in enumerate(self.class_priority)}
-        composite_mask = torch.zeros(mask.shape[1:], dtype=torch.int64)
+        composite_mask: torch.Tensor = torch.zeros(mask.shape[1:], dtype=torch.int64)
 
         for class_id in range(mask.shape[0]):
             class_mask = mask[class_id] > 0
             if class_mask.any():
                 current_priority = priority_map.get(class_id, len(self.class_priority))
 
-                update_mask = class_mask & (composite_mask == 0)
-                for existing_val in composite_mask[class_mask].unique():
-                    if existing_val == 0:
+                update_mask: torch.Tensor = class_mask & (composite_mask == 0)
+                for existing_val in composite_mask[class_mask].unique(): # type: ignore[reportUnknownVariableType]
+                    if existing_val == 0 or not isinstance(existing_val, torch.Tensor):
                         continue
+
                     existing_class_priority = priority_map.get(int(existing_val), len(self.class_priority))
                     if current_priority < existing_class_priority:
                         update_mask |= (composite_mask == existing_val) & class_mask
