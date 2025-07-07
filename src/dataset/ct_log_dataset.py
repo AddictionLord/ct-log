@@ -21,6 +21,8 @@ class CTLogDataset(CTLogDatasetBase):
         self.num_classes = num_classes
         self.mask_paths = [self.data_dir / self.masks_dir / f"{path.stem}.png" for path in self.image_paths]
 
+        # TODO: Initialize reshape transform and reshape the images and masks if necessary.
+
     def __getitem__(self, idx: int) -> dict[str, dict[str, Any] | Path | torch.Tensor]:
         """Loads an item from the dataset.
 
