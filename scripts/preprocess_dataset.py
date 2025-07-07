@@ -15,12 +15,11 @@ if TYPE_CHECKING:
 
 
 def preprocess_dataset(src_dir: Path, out_dir: Path) -> None:
-    """_summary_
+    """Preprocess the dataset by constructing and converting masks to PIL images and saving them.
 
     Args:
-        src_dir: _description_
-        out_dir: _description_
-        workers: _description_. Defaults to 2.
+        src_dir: Path to the source dataset directory containing CT images and masks.
+        out_dir: Path to the output directory where processed masks will be saved.
     """
     to_pil_image = torchvision.transforms.ToPILImage()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -33,7 +32,7 @@ def preprocess_dataset(src_dir: Path, out_dir: Path) -> None:
             message = f"Pith is None for image {path.name}. The annotation may be missing or incomplete."
             warnings.warn(message)
 
-        mask_image: Image = to_pil_image(mask.to(torch.float32))
+        mask_image: Image = to_pil_image(mask.to(torch.uint8))
         mask_image.save(out_dir / path.name)
 
 

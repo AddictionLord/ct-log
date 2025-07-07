@@ -1,18 +1,17 @@
 import plotly.express as px
 
-from src.dataset.ct_log_mask_preprocessor import CTLogMaskPreprocessor
+from src.dataset.ct_log_dataset import CTLogDataset
 
 
 def main() -> None:
-    dataset = CTLogMaskPreprocessor(data_dir="data/raw/set_24")
+    dataset = CTLogDataset(data_dir="data/processed/set_24", num_classes=10)
 
     print(f"Dataset length: {len(dataset)}")
 
     for i in range(len(dataset)):
         item = dataset[i]
-        print(item["image"].shape)
 
-        px.imshow(item["mask"], title=str(item["path"])).show()
+        px.imshow(item["mask"][0], title=str(item["path"])).show()
 
         break
 

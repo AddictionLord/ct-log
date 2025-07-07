@@ -12,5 +12,4 @@ matplotlib
 pytest
 pillow
 
-# opencv-python
 # kornia
