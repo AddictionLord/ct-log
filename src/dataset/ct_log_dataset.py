@@ -18,7 +18,6 @@ class CTLogDataset(CTLogDatasetBase):
         data = super().__getitem__(idx)
 
         mask = (self.to_tensor(Image.open(self.mask_paths[idx]).convert("L")) * 255).to(torch.int64)
-
-        data.update({"mask": mask})
+        data.update({"mask": mask.squeeze(0)})
 
         return data
