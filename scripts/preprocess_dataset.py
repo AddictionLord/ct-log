@@ -56,9 +56,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    args.output_data_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = args.output_data_dir / "preprocessing.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+    )
     logger = logging.getLogger(__name__)
 
+    logger.info("Log file: %s", log_file)
     logger.info("Source data directory: %s", args.source_data_dir)
     logger.info("Output data directory: %s", args.output_data_dir)
 
