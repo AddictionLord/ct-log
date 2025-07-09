@@ -188,3 +188,5 @@ cython_debug/
 _ccds
 *_local.sh
 *_local.yaml
+
+.vscode
