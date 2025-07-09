@@ -66,6 +66,10 @@ def main() -> None:
     )
     logger = logging.getLogger(__name__)
 
+    logging.captureWarnings(True)
+    warnings_logger = logging.getLogger("py.warnings")
+    warnings_logger.setLevel(logging.WARNING)
+
     logger.info("Log file: %s", log_file)
     logger.info("Source data directory: %s", args.source_data_dir)
     logger.info("Output data directory: %s", args.output_data_dir)
