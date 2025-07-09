@@ -11,7 +11,7 @@ def main() -> None:
     for i in range(len(dataset)):
         item = dataset[i]
 
-        px.imshow(item["mask"][0], title=str(item["path"])).show()
+        px.imshow(item["mask"], title=str(item["path"])).show()
 
         break
 
