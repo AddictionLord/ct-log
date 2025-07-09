@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
+from collections import Counter
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 import warnings
 
 import torch
@@ -9,12 +9,10 @@ import torchvision
 from tqdm import tqdm
 
 from src.dataset.ct_log_mask_preprocessor import CTLogMaskPreprocessor
-
-if TYPE_CHECKING:
-    from PIL.Image import Image
+from src.utils.metadata import save_resolutions
 
 
-def preprocess_dataset(src_dir: Path, out_dir: Path) -> None:
+def preprocess_dataset(src_dir: Path, out_dir: Path) -> Counter[tuple[int, int]]:
     """Preprocess the dataset by constructing and converting masks to PIL images and saving them.
 
     Args:
@@ -25,15 +23,21 @@ def preprocess_dataset(src_dir: Path, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     dataset = CTLogMaskPreprocessor(data_dir=src_dir)
 
+    resolutions: Counter[tuple[int, int]] = Counter()
     for _, batch in enumerate(tqdm(dataset, desc="Processing dataset", unit="item")):
         mask, path = batch["mask"], Path(batch["path"])
+
+        height, width = mask.shape
+        resolutions[(height, width)] += 1
 
         if batch["pith"] is None:
             message = f"Pith is None for image {path.name}. The annotation may be missing or incomplete."
             warnings.warn(message)
 
-        mask_image: Image = to_pil_image(mask.to(torch.uint8))
+        mask_image = to_pil_image(mask.to(torch.uint8))
         mask_image.save(out_dir / path.name)
+
+    return resolutions
 
 
 def main() -> None:
