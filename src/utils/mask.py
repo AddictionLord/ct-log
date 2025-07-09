@@ -9,7 +9,8 @@ import torch
 
 
 def base64_to_mask(string: str) -> torch.Tensor:
-    """Converts a base64 encoded string to a boolean mask tensor.
+    """Converts a base64 encoded string to a boolean mask tensor. Taken from the supervisely:
+    https://docs.supervisely.com/customization-and-integration/00_ann_format_navi/04_supervisely_format_objects
 
     Args:
         string: A string containing base64 encoded mask data.
@@ -25,7 +26,8 @@ def base64_to_mask(string: str) -> torch.Tensor:
 
 
 def mask_to_base64(mask: torch.Tensor) -> str:
-    """Converts a boolean mask tensor to a base64 encoded string.
+    """Converts a boolean mask tensor to a base64 encoded string. Taken from the supervisely:
+    https://docs.supervisely.com/customization-and-integration/00_ann_format_navi/04_supervisely_format_objects
 
     Args:
         mask: A boolean tensor of shape [H, W] representing the mask.
