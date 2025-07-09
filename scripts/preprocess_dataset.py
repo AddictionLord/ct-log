@@ -62,9 +62,16 @@ def main() -> None:
     logger.info("Source data directory: %s", args.source_data_dir)
     logger.info("Output data directory: %s", args.output_data_dir)
 
-    preprocess_dataset(args.source_data_dir, out_path := (args.output_data_dir / "mask"))
+    out_path = (args.output_data_dir / "mask")
+    resolutions = preprocess_dataset(args.source_data_dir, out_path)
 
     logger.info("Dataset preprocessing completed. Output saved to %s", out_path)
+    logger.info("Saving dataset resolutions metadata...")
+
+    save_resolutions(resolutions, resolutions_path := (args.output_data_dir / "resolutions.json"))
+
+    logger.info("Resolutions metadata saved to %s", resolutions_path)
+    logger.info("Preprocessing complete.")
 
 
 if __name__ == "__main__":
