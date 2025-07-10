@@ -3,7 +3,9 @@ import json
 import logging
 
 
-def find_square_resolution_near_mean(resolutions_file: str, logger: logging.Logger) -> tuple[int, int]:
+def find_square_resolution_near_mean(
+    resolutions_file: str, logger: logging.Logger,
+) -> tuple[tuple[int, int], tuple[int, int]]:
     """Find a square resolution close to the mean of existing resolutions.
 
     Args:
@@ -11,7 +13,7 @@ def find_square_resolution_near_mean(resolutions_file: str, logger: logging.Logg
         logger: Logger instance for logging information
 
     Returns:
-        tuple[int, int]: Tuple of (width, height) for the square resolution
+        tuple[tuple[int, int], tuple[int, int]]: Tuple of (non_square_resolution, square_resolution)
     """
     with open(resolutions_file, "r") as f:
         resolutions = json.load(f)
@@ -31,14 +33,24 @@ def find_square_resolution_near_mean(resolutions_file: str, logger: logging.Logg
 
     mean_dimension = (mean_width + mean_height) / 2
     square_size = round(mean_dimension)
+    non_square_resolution = (round(mean_width), round(mean_height))
+    square_resolution = (square_size, square_size)
 
     logger.info("Mean width: %.1f", mean_width)
     logger.info("Mean height: %.1f", mean_height)
     logger.info("Mean dimension: %.1f", mean_dimension)
-    logger.info("Recommended non-square resolution: %dx%d", round(mean_width), round(mean_height))
-    logger.info("Recommended square resolution: %dx%d", square_size, square_size)
+    logger.info("Recommended non-square resolution: %dx%d", non_square_resolution[0], non_square_resolution[1])
+    logger.info("Recommended square resolution: %dx%d", square_resolution[0], square_resolution[1])
 
-    return (square_size, square_size)
+    resolutions["non-square-recommended-resolution"] = non_square_resolution
+    resolutions["square-recommended-resolution"] = square_resolution
+
+    with open(resolutions_file, "w") as f:
+        json.dump(resolutions, f, indent=2)
+
+    logger.info("Saved resolutions to %s", resolutions_file)
+
+    return (non_square_resolution, square_resolution)
 
 
 def main() -> None:
