@@ -14,6 +14,8 @@ def main() -> None:
         px.imshow(item["image"].permute(1, 2, 0), title=str(item["path"])).show()
         px.imshow(item["mask"], title=str(item["path"])).show()
 
+        # TODO: Create a function rendering the masks into the image.
+
         break
 
 
