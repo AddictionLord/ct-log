@@ -35,6 +35,7 @@ def find_square_resolution_near_mean(resolutions_file: str, logger: logging.Logg
     logger.info("Mean width: %.1f", mean_width)
     logger.info("Mean height: %.1f", mean_height)
     logger.info("Mean dimension: %.1f", mean_dimension)
+    logger.info("Recommended non-square resolution: %dx%d", round(mean_width), round(mean_height))
     logger.info("Recommended square resolution: %dx%d", square_size, square_size)
 
     return (square_size, square_size)
