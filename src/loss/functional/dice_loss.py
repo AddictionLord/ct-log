@@ -14,8 +14,8 @@ def multiclass_dice_loss(pred: torch.Tensor, target: torch.Tensor, smooth: int =
     Returns:
         torch.Tensor: Scalar Dice Loss.
     """
-    dice = 0  # Initialize Dice loss accumulator
-    num_classes = pred.shape[1]  # Number of classes (C)
+    dice = torch.tensor(0.0)  # Initialize Dice loss accumulator
+    num_classes: torch.Tensor = pred.shape[1]  # Number of classes (C)
 
     pred = F.softmax(pred, dim=1)  # Convert logits to probabilities
     for c in range(num_classes):  # Loop through each class
