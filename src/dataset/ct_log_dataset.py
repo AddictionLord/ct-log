@@ -66,5 +66,6 @@ class CTLogDataset(CTLogDatasetBase):
         original_shape = mask.shape
         mask = self.resize_mask_transform(mask).squeeze(0)
         data.update({"mask": mask, "original_shape": original_shape[1:]})
+        data.pop("annotation")
 
         return data
