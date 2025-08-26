@@ -25,7 +25,7 @@ def multiclass_tversky_loss(
     Returns:
         torch.Tensor: Scalar Tversky Loss.
     """
-    tversky = torch.tensor(0.0)
+    tversky = torch.tensor(0.0, device=pred.device)
     num_classes: int = pred.shape[1]
 
     pred = F.softmax(pred, dim=1)
@@ -41,6 +41,6 @@ def multiclass_tversky_loss(
         tversky_index = (true_positives + smooth) / (
             true_positives + alpha * false_positives + beta * false_negatives + smooth
         )
-        tversky += tversky_index
+        tversky += tversky_index.mean()
 
     return 1 - tversky.mean() / num_classes
