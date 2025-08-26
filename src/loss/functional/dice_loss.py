@@ -14,7 +14,7 @@ def multiclass_dice_loss(pred: torch.Tensor, target: torch.Tensor, smooth: int =
     Returns:
         torch.Tensor: Scalar Dice Loss.
     """
-    dice = torch.tensor(0.0)  # Initialize Dice loss accumulator
+    dice = torch.tensor(0.0, device=pred.device)  # Initialize Dice loss accumulator
     num_classes: torch.Tensor = pred.shape[1]  # Number of classes (C)
 
     pred = F.softmax(pred, dim=1)  # Convert logits to probabilities
@@ -25,6 +25,6 @@ def multiclass_dice_loss(pred: torch.Tensor, target: torch.Tensor, smooth: int =
         intersection = (pred_c * target_c).sum(dim=(1, 2))  # Element-wise multiplication
         union = pred_c.sum(dim=(1, 2)) + target_c.sum(dim=(1, 2))  # Sum of all pixels
 
-        dice += (2. * intersection + smooth) / (union + smooth)  # Per-class Dice score
+        dice += (2.0 * intersection + smooth) / (union + smooth)  # Per-class Dice score
 
     return 1 - dice.mean() / num_classes  # Average Dice Loss across classes
