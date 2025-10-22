@@ -28,20 +28,6 @@ def main() -> None:
     dataset = CTLogDataset("data/processed/set_24", num_classes=num_classes, resolution=resolution)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    # # model = torchvision.models.segmentation.deeplabv3_mobilenet_v3_large(
-    # #     weights=torchvision.models.segmentation.DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT,
-    # # )
-    # # model = torchvision.models.segmentation.deeplabv3_resnet50(
-    # #     weights=torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.DEFAULT,
-    # # )
-    # model = torchvision.models.segmentation.deeplabv3_resnet101(
-    #     weights=torchvision.models.segmentation.DeepLabV3_ResNet101_Weights.DEFAULT,
-    # )
-    # model.classifier[4] = torch.nn.Conv2d(256, num_classes + 1, kernel_size=1)
-    # # model.load_state_dict(torch.load("models/model_weights.pth"))
-    # model.train()
-    # model.to(device)
-
     # ----- Using DINOv3 + segmentation head -----
     REPO_DIR = "/home/mary/code/dinov3"
     # model_name = "dinov3_vits16"
