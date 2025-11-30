@@ -1,0 +1,25 @@
+# Training configuration for DINOv3 segmentation model
+
+# Model parameters
+num_classes: 10
+model_name: "dinov3_vitl16"
+backbone_weights: "/mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+
+# Training parameters
+batch_size: 2
+lr: 0.0001  # 1e-4
+num_epochs: 50
+
+# Data parameters
+resolution: [320, 320]  # [height, width]
+dataset_path: "data/processed/set_24"
+shuffle_data: false
+
+# Loss parameters
+distribution_loss_weight: 0.4  # Weight for focal loss
+district_loss_weight: 0.6      # Weight for Tversky loss
+focal_alpha: 2.0
+focal_gamma: 5.0
+
+# Logging parameters
+log_interval: 10  # Log every N batches
