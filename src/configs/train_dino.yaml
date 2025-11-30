@@ -3,7 +3,7 @@
 # Model parameters
 num_classes: 10
 model_name: "dinov3_vitl16"
-backbone_weights: "/mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+backbone_weights: /mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
 
 # Training parameters
 lr: 0.0001  # 1e-4
@@ -14,19 +14,19 @@ resolution: [320, 320]  # [height, width]
 
 # Dataset configurations
 train_dataset:
-  path: "data/processed/set_24"
+  path: data/processed/set_24
   batch_size: 2
   shuffle: true
   num_workers: 4
 
 val_dataset:
-  path: "data/processed/set_24"
+  path: data/processed/set_24
   batch_size: 4
   shuffle: false
   num_workers: 4
 
 test_dataset:
-  path: "data/processed/set_24"
+  path: data/processed/set_24
   batch_size: 4
   shuffle: false
   num_workers: 4
