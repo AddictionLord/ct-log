@@ -6,14 +6,30 @@ model_name: "dinov3_vitl16"
 backbone_weights: "/mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
 
 # Training parameters
-batch_size: 2
 lr: 0.0001  # 1e-4
 num_epochs: 50
 
 # Data parameters
 resolution: [320, 320]  # [height, width]
-dataset_path: "data/processed/set_24"
-shuffle_data: false
+
+# Dataset configurations
+train_dataset:
+  path: "data/processed/set_24"
+  batch_size: 2
+  shuffle: true
+  num_workers: 4
+
+val_dataset:
+  path: "data/processed/set_24"
+  batch_size: 4
+  shuffle: false
+  num_workers: 4
+
+test_dataset:
+  path: "data/processed/set_24"
+  batch_size: 4
+  shuffle: false
+  num_workers: 4
 
 # Loss parameters
 distribution_loss_weight: 0.4  # Weight for focal loss
