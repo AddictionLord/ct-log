@@ -28,7 +28,9 @@ class CTLogDataset(CTLogDatasetBase):
         self.resize_mask_transform = self._create_resize_transform(resolution, transforms.InterpolationMode.NEAREST)
 
     def _create_resize_transform(
-        self, resolution: tuple[int, int] | None, interpolation: transforms.InterpolationMode,
+        self,
+        resolution: tuple[int, int] | None,
+        interpolation: transforms.InterpolationMode,
     ) -> torch.nn.Module:
         """Creates a resize transform or identity transform based on resolution.
 
