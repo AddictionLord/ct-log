@@ -61,24 +61,14 @@ def main() -> None:
 
             outputs = seg_head(features)
 
-            distribution_loss = multiclass_focal_loss(
-                outputs,
-                masks,
-                alpha=config.focal_alpha,
-                gamma=config.focal_gamma,
-            )
+            distribution_loss = multiclass_focal_loss(outputs, masks, config.focal_alpha, config.focal_gamma)
 
-            masks_one_hot = torch.nn.functional.one_hot(
-                masks,
-                num_classes=config.num_classes + 1,
-            ).permute(0, 3, 1, 2)
+            masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes + 1).permute(0, 3, 1, 2)
             district_loss = multiclass_tversky_loss(outputs, masks_one_hot)
 
-            loss = (
-                config.distribution_loss_weight * distribution_loss
-                + config.district_loss_weight * district_loss
-            )
+            loss = config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
             loss.backward()
+
             optimizer.step()
 
             if batch_idx % config.log_interval == 0:
