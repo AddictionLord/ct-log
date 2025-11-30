@@ -18,6 +18,38 @@ def make_transform(resize_size: int = 224):
     return torchvision.transforms.Compose([resize, normalize])
 
 
+@torch.no_grad()
+def evaluate(
+    model: torch.nn.Module,
+    seg_head: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    device: torch.device,
+    config: TrainingConfig,
+) -> list[torch.Tensor]:
+    model = model.eval()
+    losses = []
+
+    for batch_idx, batch in enumerate(dataloader):
+        images = batch["image"].to(device)
+        masks = batch["mask"].to(device)
+
+        features = model.get_intermediate_layers(images, n=1, return_class_token=False)[0]
+
+        outputs = seg_head(features)
+
+        distribution_loss = multiclass_focal_loss(outputs, masks, config.focal_alpha, config.focal_gamma)
+
+        masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes + 1).permute(0, 3, 1, 2)
+        district_loss = multiclass_tversky_loss(outputs, masks_one_hot)
+
+        loss = config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
+        losses.append(loss.item())
+
+        print(f"Eval Batch {batch_idx}, Loss: {loss.item():.4f}")
+
+    return losses
+
+
 def main() -> None:
     config = TrainingConfig.from_yaml("src/configs/train_dino.yaml")
 
@@ -64,6 +96,8 @@ def main() -> None:
 
             if batch_idx % config.log_interval == 0:
                 print(f"Epoch {epoch_idx}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+
+        val_losses = evaluate(model, seg_head, loaders["val"], device, config)
 
     px.imshow(masks[0].cpu()).show()
     px.imshow(outputs[0].argmax(0).cpu()).show()
