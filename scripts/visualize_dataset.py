@@ -48,9 +48,7 @@ def render_mask_on_image(image: torch.Tensor, mask: torch.Tensor, alpha: float =
         # Create a mapping from value to normalized position
         mask_normalized = np.zeros_like(mask_np, dtype=float)
         for i, val in enumerate(unique_vals_sorted):
-            normalized_val = (
-                i / (len(unique_vals_sorted) - 1) if len(unique_vals_sorted) > 1 else 0.0
-            )
+            normalized_val = i / (len(unique_vals_sorted) - 1) if len(unique_vals_sorted) > 1 else 0.0
             mask_normalized[mask_np == val] = normalized_val
 
         # Convert to RGB using matplotlib's viridis if available
@@ -87,7 +85,7 @@ def render_mask_on_image(image: torch.Tensor, mask: torch.Tensor, alpha: float =
 
 def main() -> None:
     """Visualize dataset images and masks, displaying them in the browser."""
-    dataset = CTLogDataset(data_dir="data/processed/set_24", num_classes=10, resolution=(458, 530))
+    dataset = CTLogDataset(data_dir="data/processed/set_24", resolution=(458, 530))
 
     output_dir = Path("data/processed/visualizations")
     output_dir.mkdir(exist_ok=True)
