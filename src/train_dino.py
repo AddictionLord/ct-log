@@ -4,9 +4,9 @@ import torch
 import torchvision
 
 from src.configs.training_config import TrainingConfig
-from src.dataset.ct_log_dataset import CTLogDataset
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
+from src.utils.dataloading import create_dataloaders_for_splits
 
 
 def make_transform(resize_size: int = 224):
@@ -23,16 +23,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = CTLogDataset(
-        config.dataset_path,
-        num_classes=config.num_classes,
-        resolution=config.resolution,
-    )
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=config.batch_size,
-        shuffle=config.shuffle_data,
-    )
+    loaders = create_dataloaders_for_splits(config, splits=("train", "val", "test"))
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
@@ -50,7 +41,7 @@ def main() -> None:
         model.eval()
         seg_head.train()
 
-        for batch_idx, batch in enumerate(dataloader):
+        for batch_idx, batch in enumerate(loaders["train"]):
             optimizer.zero_grad()
 
             images = transform(batch["image"].to(device))
