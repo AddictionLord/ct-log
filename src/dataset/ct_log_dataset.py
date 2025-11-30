@@ -8,27 +8,25 @@ from torchvision import transforms
 from src.dataset.ct_log_dataset_base import CTLogDatasetBase
 
 
-class CTLogDataset(CTLogDatasetBase):
+class CTLogDataset(CTLogDatasetBase):  # noqa: D101
     masks_dir: str = "mask"
 
-    def __init__(self, data_dir: str, num_classes: int = 10, resolution: tuple[int, int] | None = None) -> None:
+    def __init__(self, data_dir: str | Path, resolution: tuple[int, int] | None = None) -> None:
         """Initializes the CTLogDataset.
 
         Args:
             data_dir: Path to the dataset directory containing directories for images, annotations, and masks.
-            num_classes: Number of classes in the dataset.
             resolution: Target resolution for the images and masks. If None, no resizing is applied.
         """
         super().__init__(data_dir)
-        self.num_classes = num_classes
         self.resolution = resolution
         self.mask_paths = [self.data_dir / self.masks_dir / f"{path.stem}.png" for path in self.image_paths]
 
         self.resize_transform = self._create_resize_transform(resolution, transforms.InterpolationMode.BILINEAR)
         self.resize_mask_transform = self._create_resize_transform(resolution, transforms.InterpolationMode.NEAREST)
 
+    @staticmethod
     def _create_resize_transform(
-        self,
         resolution: tuple[int, int] | None,
         interpolation: transforms.InterpolationMode,
     ) -> torch.nn.Module:
