@@ -122,7 +122,27 @@ def main() -> None:
             if batch_idx % config.log_interval == 0:
                 print(f"Epoch {epoch_idx}, Batch {batch_idx}, Loss: {loss.item():.4f}")
 
-        val_losses = evaluate(model, seg_head, loaders["val"], device, config)
+        if config.compute_train_metrics:
+            train_mean_iou = mean_iou.compute().item()
+            training_loss = torch.mean(torch.tensor(losses)).item()
+            print(f"Epoch {epoch_idx}, Training Loss: {training_loss:.4f}, Mean IoU: {train_mean_iou:.4f}")
+
+        # Training loop ------------------------------------------------------------------------------------------------
+
+        if not config.evaluate:
+            continue
+
+        val_stats = evaluate(model, seg_head, loaders["val"], device, config)
+        print(f"Epoch {epoch_idx}, Validation Loss: {val_stats[0]:.4f}, Mean IoU: {val_stats[1]:.4f}")
+
+        if not val_stats[1] > criterion:
+            continue
+
+        torch.save(seg_head.state_dict(), config.checkpoint_path)  # TODO: mlflow.pytorch.log_model
+        criterion = val_stats[1]
+
+        test_stats = evaluate(model, seg_head, loaders["test"], device, config)
+        print(f"Epoch {epoch_idx}, Test Loss: {test_stats[0]:.4f}, Mean IoU: {test_stats[1]:.4f}")
 
     px.imshow(masks[0].cpu()).show()
     px.imshow(outputs[0].argmax(0).cpu()).show()
