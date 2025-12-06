@@ -55,13 +55,13 @@ class MlflowLogger(ILogger):
         if not self._enabled:
             return
 
-        prefix = f"{metrics.split}_"
-        self._mlflow.log_metric(f"{prefix}loss", metrics.loss, step=metrics.epoch)
-        self._mlflow.log_metric(f"{prefix}mean_iou", metrics.mean_iou, step=metrics.epoch)
+        prefix = f"{metrics.split}"
+        self._mlflow.log_metric(f"{prefix}/loss", metrics.loss, step=metrics.epoch)
+        self._mlflow.log_metric(f"{prefix}/mean_iou", metrics.mean_iou, step=metrics.epoch)
 
         for key, value in metrics.extra.items():
             if isinstance(value, (int, float)):
-                self._mlflow.log_metric(f"{prefix}{key}", value, step=metrics.epoch)
+                self._mlflow.log_metric(f"{prefix}/{key}", value, step=metrics.epoch)
 
     def log_params(self, params: dict[str, Any]) -> None:
         """Log hyperparameters or configuration.
