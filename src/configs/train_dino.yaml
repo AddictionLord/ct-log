@@ -4,6 +4,7 @@
 num_classes: 10
 model_name: "dinov3_vitl16"
 backbone_weights: /mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /mnt/D/models/ct-log/seg_head_checkpoint.pth
 
 # Training parameters
 lr: 0.0001  # 1e-4
@@ -38,4 +39,6 @@ focal_alpha: 2.0
 focal_gamma: 5.0
 
 # Logging parameters
-log_interval: 10  # Log every N batches
+log_interval: false  # Log every N batches
+compute_train_metrics: true
+evaluate: false

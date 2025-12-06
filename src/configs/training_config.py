@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Literal, Tuple
 
 from pydantic import BaseModel, Field
 import yaml
@@ -25,6 +25,9 @@ class TrainingConfig(BaseModel):
         focal_alpha: Alpha parameter for focal loss.
         focal_gamma: Gamma parameter for focal loss.
         log_interval: Number of batches between logging.
+        compute_train_metrics: Whether to compute training metrics during training.
+        evaluate: Whether to perform evaluation on the validation set.
+        checkpoint_path: Path to save the segmentation head checkpoint.
     """
 
     num_classes: int = Field(..., gt=0)
@@ -40,7 +43,10 @@ class TrainingConfig(BaseModel):
     district_loss_weight: float = Field(0.6, ge=0, le=1)
     focal_alpha: float = Field(2.0, gt=0)
     focal_gamma: float = Field(5.0, gt=0)
-    log_interval: int = Field(10, gt=0)
+    log_interval: int | Literal[False] = 100
+    compute_train_metrics: bool = True
+    evaluate: bool = True
+    checkpoint_path: Path = Path("/mnt/D/models/ct-log/seg_head_checkpoint.pth")
 
     @classmethod
     def from_yaml(cls, yaml_path: str | Path) -> "TrainingConfig":
