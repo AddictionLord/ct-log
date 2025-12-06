@@ -47,6 +47,8 @@ class TrainingConfig(BaseModel):
     compute_train_metrics: bool = True
     evaluate: bool = True
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/seg_head_checkpoint.pth")
+    use_local_logger: bool = True
+    local_log_dir: Path = Path("logs")
     use_mlflow: bool = False
     mlflow_experiment_name: str | None = None
     mlflow_run_name: str | None = None
