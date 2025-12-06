@@ -51,7 +51,11 @@ def evaluate(
 
 
 def main() -> None:
-    config = TrainingConfig.from_yaml("src/configs/train_dino.yaml")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="src/configs/train_dino.yaml", help="Path to config file.")
+    args = parser.parse_args()
+
+    config = TrainingConfig.from_yaml(args.config)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
