@@ -1,6 +1,9 @@
+import argparse
+
 import plotly.express as px
 from segmentation_head import create_dinov3_segmentor
 import torch
+from torchmetrics.segmentation import MeanIoU
 import torchvision
 
 from src.configs.training_config import TrainingConfig
@@ -25,9 +28,24 @@ def evaluate(
     dataloader: torch.utils.data.DataLoader,
     device: torch.device,
     config: TrainingConfig,
-) -> list[torch.Tensor]:
+) -> tuple[float, float]:
+    """Evaluate the model and segmentation head on the given dataloader.
+
+    Args:
+        model: _description_
+        seg_head: _description_
+        dataloader: _description_
+        device: _description_
+        config: _description_
+
+    Returns:
+        tuple[float, float]:
+    """
     model = model.eval()
+    seg_head = seg_head.eval()
     losses = []
+    ious = []
+    mean_iou = MeanIoU(num_classes=config.num_classes + 1).to(device)
 
     for batch_idx, batch in enumerate(dataloader):
         images = batch["image"].to(device)
@@ -45,9 +63,12 @@ def evaluate(
         loss = config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
         losses.append(loss.item())
 
+        preds = outputs.argmax(dim=1)
+        mean_iou.update(preds, masks)
+
         print(f"Eval Batch {batch_idx}, Loss: {loss.item():.4f}")
 
-    return losses
+    return float(torch.mean(torch.tensor(losses)).item()), float(mean_iou.compute().item())
 
 
 def main() -> None:
