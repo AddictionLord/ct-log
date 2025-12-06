@@ -28,6 +28,9 @@ class TrainingConfig(BaseModel):
         compute_train_metrics: Whether to compute training metrics during training.
         evaluate: Whether to perform evaluation on the validation set.
         checkpoint_path: Path to save the segmentation head checkpoint.
+        class_weight_mode: Mode for class weighting ("none", "online", "offline").
+        class_weights: Fixed class weights for offline mode.
+        class_weight_ema_decay: EMA decay for online mode.
     """
 
     num_classes: int = Field(..., gt=0)
@@ -47,6 +50,9 @@ class TrainingConfig(BaseModel):
     compute_train_metrics: bool = True
     evaluate: bool = True
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/seg_head_checkpoint.pth")
+    class_weight_mode: Literal["none", "online", "offline"] = "none"
+    class_weights: list[float] | None = None
+    class_weight_ema_decay: float = 0.9
     use_local_logger: bool = True
     local_log_dir: Path = Path("logs")
     use_mlflow: bool = False

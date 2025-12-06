@@ -10,6 +10,7 @@ from src.configs.training_config import TrainingConfig
 from src.loggers import CombinedLogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
+from src.utils.class_weights import ClassWeightTracker
 from src.utils.dataloading import create_dataloaders_for_splits
 from src.utils.metrics import MetricsTracker
 
@@ -114,6 +115,16 @@ def main() -> None:
 
     optimizer = torch.optim.Adam(seg_head.parameters(), lr=config.lr)
 
+    weight_tracker: ClassWeightTracker | None = None
+    if config.class_weight_mode != "none":
+        weight_tracker = ClassWeightTracker(
+            num_classes=config.num_classes + 1,
+            mode=config.class_weight_mode,
+            ema_decay=config.class_weight_ema_decay,
+        )
+        if config.class_weight_mode == "offline" and config.class_weights:
+            weight_tracker.set_fixed_weights(config.class_weights)
+
     criterion = 0.0
     for epoch_idx in range(config.num_epochs):
         # Training loop ------------------------------------------------------------------------------------------------
@@ -133,7 +144,14 @@ def main() -> None:
 
             outputs = seg_head(features)
 
-            distribution_loss = multiclass_focal_loss(outputs, masks, config.focal_alpha, config.focal_gamma)
+            class_weights = None
+            if weight_tracker:
+                weight_tracker.update(masks)
+                class_weights = weight_tracker.get_weights(device)
+
+            distribution_loss = multiclass_focal_loss(
+                outputs, masks, config.focal_alpha, config.focal_gamma, class_weights
+            )
 
             masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes + 1).permute(0, 3, 1, 2)
             district_loss = multiclass_tversky_loss(outputs, masks_one_hot)
@@ -182,8 +200,8 @@ def main() -> None:
 
     logger.end()
 
-    px.imshow(masks[0].cpu()).show()
-    px.imshow(outputs[0].argmax(0).cpu()).show()
+    [px.imshow(mask.cpu()).show() for mask in masks]
+    [px.imshow(output.argmax(0).cpu()).show() for output in outputs]
 
     print()
 

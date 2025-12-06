@@ -8,7 +8,7 @@ checkpoint_path: /mnt/D/models/ct-log/seg_head_checkpoint.pth
 
 # Training parameters
 lr: 0.0001  # 1e-4
-num_epochs: 50
+num_epochs: 200
 
 # Data parameters
 resolution: [320, 320]  # [height, width]
@@ -37,6 +37,11 @@ distribution_loss_weight: 0.4  # Weight for focal loss
 district_loss_weight: 0.6      # Weight for Tversky loss
 focal_alpha: 2.0
 focal_gamma: 5.0
+
+# Loss class weighting: "none", "online", or "offline"
+class_weight_mode: none
+class_weights: null            # For offline mode: [1.0, 2.0, 3.0, ...]
+class_weight_ema_decay: 0.0    # For online mode
 
 # Logging parameters
 log_interval: false  # Log every N batches

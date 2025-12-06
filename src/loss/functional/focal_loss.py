@@ -7,6 +7,7 @@ def multiclass_focal_loss(
     target: torch.Tensor,
     alpha: float = 1.0,
     gamma: float = 2.0,
+    class_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes Focal Loss for multi-class segmentation.
 
@@ -19,6 +20,7 @@ def multiclass_focal_loss(
         target: Ground truth class indices (batch_size, H, W).
         alpha: Weighting factor for rare class (default: 1.0).
         gamma: Focusing parameter, higher values focus more on hard examples (default: 2.0).
+        class_weights: Per-class weights tensor of shape (C,) (default: None).
 
     Returns:
         torch.Tensor: Scalar Focal Loss.
@@ -27,7 +29,7 @@ def multiclass_focal_loss(
     pred_probs = F.softmax(pred, dim=1)
 
     # Compute cross entropy loss without reduction
-    ce_loss = F.cross_entropy(pred, target, reduction="none")
+    ce_loss = F.cross_entropy(pred, target, weight=class_weights, reduction="none")
 
     # Get the probability of the true class for each pixel
     # target is (batch_size, H, W), we need to gather the predicted probabilities
