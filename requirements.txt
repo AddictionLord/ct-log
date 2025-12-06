@@ -11,5 +11,6 @@ plotly
 matplotlib
 pytest
 pillow
+mlflow
 
 # kornia

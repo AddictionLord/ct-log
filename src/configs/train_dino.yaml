@@ -42,3 +42,6 @@ focal_gamma: 5.0
 log_interval: false  # Log every N batches
 compute_train_metrics: true
 evaluate: false
+use_mlflow: true
+mlflow_experiment_name: ct-log
+mlflow_tracking_uri: http://localhost:5000

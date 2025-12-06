@@ -10,6 +10,7 @@ from src.configs.training_config import TrainingConfig
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.utils.dataloading import create_dataloaders_for_splits
+from src.utils.metrics import MetricsTracker, MLflowLogger
 
 
 def make_transform(resize_size: int = 224):
@@ -39,7 +40,7 @@ def evaluate(
         config: _description_
 
     Returns:
-        tuple[float, float]:
+        tuple[float, float]: Mean loss and mean IoU.
     """
     model = model.eval()
     seg_head = seg_head.eval()
@@ -81,6 +82,15 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     loaders = create_dataloaders_for_splits(config, splits=("train", "val", "test"))
+
+    tracker = MetricsTracker()
+    mlflow_logger = MLflowLogger(
+        experiment_name=config.mlflow_experiment_name,
+        run_name=config.mlflow_run_name,
+        tracking_uri=config.mlflow_tracking_uri,
+    )
+    if config.use_mlflow:
+        mlflow_logger.start()
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
@@ -134,6 +144,8 @@ def main() -> None:
         if config.compute_train_metrics:
             train_mean_iou = mean_iou.compute().item()
             training_loss = torch.mean(torch.tensor(losses)).item()
+            tracker.add(epoch_idx, "train", training_loss, train_mean_iou)
+            mlflow_logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
             print(f"Epoch {epoch_idx}, Training Loss: {training_loss:.4f}, Mean IoU: {train_mean_iou:.4f}")
 
         # Training loop ------------------------------------------------------------------------------------------------
@@ -142,15 +154,19 @@ def main() -> None:
             continue
 
         val_stats = evaluate(model, seg_head, loaders["val"], device, config)
+        tracker.add(epoch_idx, "val", val_stats[0], val_stats[1])
+        mlflow_logger.log_metrics(tracker.get(epoch_idx, "val")[-1])
         print(f"Epoch {epoch_idx}, Validation Loss: {val_stats[0]:.4f}, Mean IoU: {val_stats[1]:.4f}")
 
         if not val_stats[1] > criterion:
             continue
 
-        torch.save(seg_head.state_dict(), config.checkpoint_path)  # TODO: mlflow.pytorch.log_model
+        torch.save(seg_head.state_dict(), config.checkpoint_path)
         criterion = val_stats[1]
 
         test_stats = evaluate(model, seg_head, loaders["test"], device, config)
+        tracker.add(epoch_idx, "test", test_stats[0], test_stats[1])
+        mlflow_logger.log_metrics(tracker.get(epoch_idx, "test")[-1])
         print(f"Epoch {epoch_idx}, Test Loss: {test_stats[0]:.4f}, Mean IoU: {test_stats[1]:.4f}")
 
     px.imshow(masks[0].cpu()).show()
