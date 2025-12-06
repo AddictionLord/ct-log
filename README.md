@@ -25,14 +25,14 @@ python src/train_dino.py --config src/configs/train_dino.yaml
 
 ## Main:
 1. ~~Setup metrics computation for training loop~~
-2. Accumulate the metrics from all the loops
+2. ~~Accumulate the metrics from all the loops~~
 3. Add the regression head for pith prediction
-4. Ensure metrics logging to MlFlow
+4. ~~Ensure metrics logging to MlFlow~~
 5. Create a new dataset based on lates changes in the document (less classes)
 7. Use weights for classes in loss computations
    1.  Research: Online vs Offline class loss weight computation
    2.  Implementation of the chosen approach
-8.  Train the model
+8. Train the model
 
 ## Optional:
 1. Create an interface for the prediction model
