@@ -94,9 +94,13 @@ def main() -> None:
 
     optimizer = torch.optim.Adam(seg_head.parameters(), lr=config.lr)
 
+    criterion = 0.0
     for epoch_idx in range(config.num_epochs):
+        # Training loop ------------------------------------------------------------------------------------------------
         model.eval()
         seg_head.train()
+        mean_iou = MeanIoU(num_classes=config.num_classes + 1).to(device)
+        losses = []
 
         for batch_idx, batch in enumerate(loaders["train"]):
             optimizer.zero_grad()
@@ -116,10 +120,15 @@ def main() -> None:
 
             loss = config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
             loss.backward()
+            losses.append(loss.cpu().detach().item())
 
             optimizer.step()
 
-            if batch_idx % config.log_interval == 0:
+            if config.compute_train_metrics:
+                preds = outputs.argmax(dim=1)
+                mean_iou.update(preds, masks)
+
+            if config.log_interval and batch_idx % config.log_interval == 0:
                 print(f"Epoch {epoch_idx}, Batch {batch_idx}, Loss: {loss.item():.4f}")
 
         if config.compute_train_metrics:
