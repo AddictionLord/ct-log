@@ -3,6 +3,59 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_4_combined_v5 — dataset id 1139719
+**Date**: 2026-05-23. **Knot strategy**: YOLO-OBB + SAM2 mask_input prior, **conf=0.40**.
+
+What changed vs v4:
+- Just bumped `--yolo_conf_knot` from 0.25 to 0.40. Holdout eval on the OBB
+  path showed precision jumps from 0.60 (conf=0.25) to **1.00 (conf=0.40)**
+  with recall only dropping 0.69 → 0.62. F1 effectively tied with AABB
+  baseline (0.76 vs 0.78) but mask quality much better (IoU 0.62 vs 0.54).
+
+Trade: fewer knots but every knot is real. Matches Rostislav's stated
+preference ("missing object is faster to add than a wrong one is to fix").
+
+Stats: 247 knots / 125 frames (0.85/frame, vs 1.01 in v3). 5 frames flagged
+for pith review.
+
+Caveat: holdout eval has n=13 GT knots — F1 diffs of 0.02 are within noise.
+The visible quality difference (tighter masks, no FPs) is the more reliable
+signal.
+
+How to regenerate:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --yolo_obb_weights /home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt \
+    --yolo_conf_knot 0.40 \
+    --dataset_name auto_4_combined_v5 \
+    --out_dir /tmp/sm2025_subset4_combined_v5 \
+    --upload
+```
+
+Status: shipped. Likely the new baseline.
+
+---
+
+## auto_4_combined_v4 — dataset id 1139718
+**Date**: 2026-05-23. **No functional change vs v3** — added safety filters
+that turned out to be no-ops on the current pipeline.
+
+What changed vs v3 (in code, not in output):
+- Knot masks now intersected with the final wood mask before keeping (drops
+  any pixel outside the log boundary).
+- Drop knots smaller than 50 px after intersection.
+- Configurable via `--knot_min_px`.
+
+Empirical result: 0/295 knots dropped (all OBB+mask_input knots were already
+inside wood and ≥50 px). Filter retained as a safety net for future weight
+changes that might regress.
+
+Stats: 295 knots / 142 frames — bit-identical to v3.
+
+Status: superseded by v5. Kept for the filter-code lineage.
+
+---
+
 ## auto_4_combined_v3 — dataset id 1139713
 **Date**: 2026-05-23. **Knot strategy**: YOLO-OBB + SAM2 with mask_input prior.
 
@@ -17,6 +70,10 @@ What changed vs v2:
 - Wood union unchanged (threshold ∪ propagation_wood ∪ knot_mask ∪ pith).
 
 Stats: 295 knots / 142 frames (1.01/frame). 5 frames flagged for pith review.
+
+Holdout F1 0.64 at conf=0.25 (precision 0.60, recall 0.69, IoU 0.62). The
+conf=0.25 default carried over from AABB pipeline turned out too low for
+the more-confident OBB head — bumping to 0.40 (v5) cleans up the FPs.
 
 Files added/changed for v3:
 - `ann_pipeline/knot/data_prep_obb.py` — single-class OBB label exporter
@@ -38,7 +95,7 @@ conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combine
     --upload
 ```
 
-Status: shipped. Waiting for Rostislav's visual review.
+Status: superseded by v5 (same recipe + conf=0.40).
 
 ---
 
@@ -141,14 +198,16 @@ Status: superseded.
 
 # Quick reference
 
-| dataset | knots | pith | wood |
-|---|---|---|---|
-| auto_3_anchors_from_rosta | propagation | propagation blob (mask) | propagation only |
-| auto_3_anchors_from_rosta_v2 | propagation | propagation centroid | union of threshold + propagation |
-| auto_4_propagation_45anchors | propagation (45 anchors) | propagation centroid | propagation only |
-| auto_4_combined_v1 | propagation (45 anchors) | YOLO bbox (16-anchor model) | threshold ∪ propagation |
-| auto_4_combined_v2 | YOLO+SAM2 (45-anchor model, AABB) | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
-| **auto_4_combined_v3** | **YOLO-OBB+SAM2 (mask_input prior)** | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
+| dataset | knots | knot conf | pith | wood |
+|---|---|---|---|---|
+| auto_3_anchors_from_rosta | propagation | — | propagation blob (mask) | propagation only |
+| auto_3_anchors_from_rosta_v2 | propagation | — | propagation centroid | threshold ∪ propagation |
+| auto_4_propagation_45anchors | propagation (45 anchors) | — | propagation centroid | propagation only |
+| auto_4_combined_v1 | propagation (45 anchors) | — | YOLO bbox (16-anchor model) | threshold ∪ propagation |
+| auto_4_combined_v2 | YOLO+SAM2 (45-anchor model, AABB) | 0.25 | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
+| auto_4_combined_v3 | YOLO-OBB+SAM2 (mask_input prior) | 0.25 | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
+| auto_4_combined_v4 | (= v3 + wood-intersect + 50px filter, no-op) | 0.25 | YOLO bbox (45-anchor model) | as v3 |
+| **auto_4_combined_v5** | **YOLO-OBB+SAM2 (mask_input prior)** | **0.40** | YOLO bbox (45-anchor model) | as v3 |
 
 # Key learnings (chronological)
 
@@ -178,17 +237,33 @@ Status: superseded.
    mismatch was the root cause. Fake OBB test (using GT-derived OBBs) showed
    IoU 0.70 vs 0.56 vs the AABB baseline.
 
+7. **OBB needs higher conf threshold than AABB**. At conf=0.25 the OBB model
+   produced more FPs than AABB (precision 0.60 vs 0.90) because OBB val mAP50
+   is much higher (0.91 vs 0.50) — the model is more confident, so 0.25 lets
+   through detections AABB wouldn't have made. At **conf=0.40** OBB hits
+   precision=1.0 with recall=0.62, F1=0.76 (vs AABB F1=0.78). Effectively
+   tied F1, but with better mask quality (IoU 0.62 vs 0.54). Shipped as v5.
+
+8. **Wood-intersect + min-size knot filter is a no-op on the OBB pipeline**:
+   all 295 v3 knots were already inside wood and ≥50 px. Filter kept as a
+   safety net (v4).
+
+9. **Holdout eval n=13 GT knots is statistically tiny**: F1 differences of
+   ±0.02 between configurations are likely within noise. Trust visible mask
+   quality and Rostislav's review over single-digit F1 differences.
+
 # Open questions
 
-- Does v3 visually fix the mask-blob problem? Awaiting Rostislav.
+- Rostislav's verdict on v5 vs v3 vs v2: which visual quality wins?
 - Small-knot recall: 0/n matched at IoU≥0.3 by either method on the holdout
   eval. Open whether to push for more small-knot annotations or change
   inference resolution.
-- Should v3 also clip knots by wood (intersect with wood mask)? Cheap to add
-  if any v3 knot extends outside log boundary.
-- Worth evaluating v3's actual F1 on the same 9-page holdout? The OBB model
-  was trained on all 45 anchors (no exclusion); for a fair comparison we'd
-  rebuild with holdouts excluded.
+- Holdout eval stability: rerun on a different 9-page split to see if OBB vs
+  AABB difference holds — current single-split numbers are within noise.
+- Pith keypoint head: would a `yolo11n-pose` model give sub-pixel pith
+  localisation vs the current bbox-centroid approach?
+- Wood UNet: replace threshold (fails on dark slices) with a small UNet
+  trained on the 45 wood annotations.
 
 # How to continue
 

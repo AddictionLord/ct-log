@@ -31,6 +31,7 @@ import pathlib
 from typing import Dict, List, Optional, Tuple
 
 from ann_pipeline.knot.data_prep import knot_mask_from_ann
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -511,6 +512,51 @@ def _bbox_iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float
     return float(inter / union) if union > 0 else 0.0
 
 
+def obb_sam_knots(
+    yolo_obb_model: YOLO,
+    sam_predictor: SAM2ImagePredictor,
+    img_path: str,
+    conf: float,
+    nms_iou: float,
+) -> Tuple[List[np.ndarray], List[float]]:
+    """YOLO-OBB -> rasterise -> SAM2 mask_input prior + AABB-of-OBB box -> clip."""
+    arr = np.array(Image.open(img_path))
+    if arr.ndim == 2:
+        rgb = np.stack([arr] * 3, axis=-1)
+    elif arr.shape[-1] == 4:
+        rgb = arr[..., :3]
+    else:
+        rgb = arr
+    rgb = rgb.astype(np.uint8)
+    h, w = rgb.shape[:2]
+
+    res = yolo_obb_model.predict(rgb, conf=conf, iou=nms_iou, verbose=False)[0]
+    if res.obb is None or len(res.obb) == 0:
+        return [], []
+    xyxyxyxy = res.obb.xyxyxyxy.cpu().numpy()
+    confs = res.obb.conf.cpu().numpy().tolist()
+
+    masks: List[np.ndarray] = []
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        sam_predictor.set_image(rgb)
+        for corners in xyxyxyxy:
+            obb_raster = np.zeros((h, w), dtype=np.uint8)
+            cv2.fillPoly(obb_raster, [corners.astype(np.int32)], 1)
+            low = cv2.resize(obb_raster, (128, 128), interpolation=cv2.INTER_NEAREST)
+            mask_input = np.where(low > 0, 10.0, -10.0).astype(np.float32)[None]
+            x1 = max(0, int(np.floor(corners[:, 0].min())))
+            y1 = max(0, int(np.floor(corners[:, 1].min())))
+            x2 = min(w, int(np.ceil(corners[:, 0].max())))
+            y2 = min(h, int(np.ceil(corners[:, 1].max())))
+            aabb = np.array([x1, y1, x2, y2], dtype=np.float32)
+            m, _, _ = sam_predictor.predict(box=aabb, mask_input=mask_input, multimask_output=False)
+            mask = m[0].astype(bool)
+            clipped = np.zeros_like(mask)
+            clipped[y1:y2, x1:x2] = mask[y1:y2, x1:x2]
+            masks.append(clipped)
+    return masks, [float(c) for c in confs]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -531,6 +577,12 @@ def main() -> None:
         type=float,
         default=None,
         help="If set, apply greedy mask-IoU NMS to SAM2 outputs at this threshold (e.g. 0.5).",
+    )
+    parser.add_argument(
+        "--yolo_obb_weights",
+        type=str,
+        default=None,
+        help="If set, knots come from this YOLO-OBB model + SAM2 mask_input prior instead of the AABB model.",
     )
     parser.add_argument("--out_dir", default=OUT_DIR)
     parser.add_argument(
@@ -608,6 +660,9 @@ def main() -> None:
         print("saved propagation predictions to %s" % npz_path)
 
     yolo_model = YOLO(args.yolo_weights)
+    yolo_obb_model = YOLO(args.yolo_obb_weights) if args.yolo_obb_weights else None
+    if yolo_obb_model is not None:
+        print("using YOLO-OBB knot model: %s" % args.yolo_obb_weights)
     print("building SAM2 image predictor ...")
     cfg = "//" + MODEL_CFG_PATH
     sam = build_sam2(cfg, CHECKPOINT)
@@ -619,17 +674,32 @@ def main() -> None:
     for page in HOLDOUT_PAGES:
         img_paths[page] = page_img_path(page)
         gt_components_by_page[page] = gt_knot_components(page_ann_path(page))
-        yolo_results[page] = yolo_sam_predict(
-            yolo_model,
-            sam_predictor,
-            img_paths[page],
-            args.conf,
-            yolo_nms_iou=args.yolo_nms_iou,
-            mask_nms_iou=args.mask_nms_iou,
-        )
+        if yolo_obb_model is not None:
+            knot_masks, knot_confs = obb_sam_knots(
+                yolo_obb_model, sam_predictor, img_paths[page], args.conf, args.yolo_nms_iou
+            )
+            _, _, pith_pt = yolo_sam_predict(
+                yolo_model,
+                sam_predictor,
+                img_paths[page],
+                args.conf,
+                yolo_nms_iou=args.yolo_nms_iou,
+                mask_nms_iou=args.mask_nms_iou,
+            )
+            yolo_results[page] = (knot_masks, knot_confs, pith_pt)
+        else:
+            yolo_results[page] = yolo_sam_predict(
+                yolo_model,
+                sam_predictor,
+                img_paths[page],
+                args.conf,
+                yolo_nms_iou=args.yolo_nms_iou,
+                mask_nms_iou=args.mask_nms_iou,
+            )
 
     evaluate(yolo_results, prop_results, train_anchors, args.iou_thr, out_dir)
-    yolo_pr_sweep(args.yolo_weights, img_paths, gt_components_by_page, args.iou_thr, out_dir)
+    if yolo_obb_model is None:
+        yolo_pr_sweep(args.yolo_weights, img_paths, gt_components_by_page, args.iou_thr, out_dir)
 
 
 if __name__ == "__main__":

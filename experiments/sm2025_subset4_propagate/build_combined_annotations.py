@@ -224,6 +224,7 @@ def build_annotation(
     yolo_conf_pith: float,
     yolo_conf_knot: float,
     yolo_nms_iou: float,
+    knot_min_px: int,
     tau_flag: float,
 ) -> Tuple[dict, Dict[str, object]]:
     """Returns (Supervisely-format ann dict, per-frame metadata for logging)."""
@@ -243,16 +244,23 @@ def build_annotation(
 
     thresh_wood = threshold_largest_cc(img_gray, thresh=wood_thresh).astype(bool)
     wood_union = prop_wood | combined_knot_mask | prop_pith | thresh_wood
-    wood_final = largest_cc(wood_union)
+    wood_final = largest_cc(wood_union).astype(bool)
 
-    obj = make_bitmap_object("Wood", wood_final)
+    obj = make_bitmap_object("Wood", wood_final.astype(np.uint8))
     if obj is not None:
         objects.append(obj)
 
+    n_dropped_size = 0
+    n_dropped_outside = 0
     for km in knot_masks:
-        if km.sum() < 8:
+        clipped = km & wood_final
+        if clipped.sum() < knot_min_px:
+            if km.sum() < knot_min_px:
+                n_dropped_size += 1
+            else:
+                n_dropped_outside += 1
             continue
-        obj = make_bitmap_object("Knot", km.astype(np.uint8))
+        obj = make_bitmap_object("Knot", clipped.astype(np.uint8))
         if obj is not None:
             objects.append(obj)
 
@@ -298,7 +306,10 @@ def build_annotation(
         "prop_xy": prop_xy,
         "pith_source": pith_source,
         "pith_disagreement_px": pith_disagreement_px,
-        "n_knots": len(knot_masks),
+        "n_knots_raw": len(knot_masks),
+        "n_knots_kept": len(knot_masks) - n_dropped_size - n_dropped_outside,
+        "n_dropped_size": n_dropped_size,
+        "n_dropped_outside_wood": n_dropped_outside,
     }
     return ann, meta
 
@@ -339,6 +350,7 @@ def write_export(
     yolo_conf_pith: float,
     yolo_conf_knot: float,
     yolo_nms_iou: float,
+    knot_min_px: int,
     tau_flag: float,
 ) -> List[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -384,6 +396,7 @@ def write_export(
             yolo_conf_pith,
             yolo_conf_knot,
             yolo_nms_iou,
+            knot_min_px,
             tau_flag,
         )
         meta["page"] = int(p)
@@ -454,6 +467,12 @@ def main() -> None:
     parser.add_argument("--yolo_conf_pith", type=float, default=0.10)
     parser.add_argument("--yolo_conf_knot", type=float, default=0.25)
     parser.add_argument("--yolo_nms_iou", type=float, default=0.5)
+    parser.add_argument(
+        "--knot_min_px",
+        type=int,
+        default=50,
+        help="Drop knot detections smaller than this after wood-intersect. Default 50.",
+    )
     parser.add_argument("--tau_flag", type=float, default=None, help="If unset, computed from data (mean+3σ).")
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--project_id", type=int, default=376641)
@@ -501,6 +520,7 @@ def main() -> None:
         args.yolo_conf_pith,
         args.yolo_conf_knot,
         args.yolo_nms_iou,
+        args.knot_min_px,
         tau_flag,
     )
 
@@ -510,15 +530,27 @@ def main() -> None:
     n_disagree = sum(
         1 for m in metas if m["pith_disagreement_px"] is not None and m["pith_disagreement_px"] >= tau_flag
     )
-    n_knots_total = sum(int(m.get("n_knots", 0)) for m in metas)
-    n_frames_with_knots = sum(1 for m in metas if int(m.get("n_knots", 0)) > 0)
+    n_knots_raw = sum(int(m.get("n_knots_raw", 0)) for m in metas)
+    n_knots_kept = sum(int(m.get("n_knots_kept", 0)) for m in metas)
+    n_dropped_size = sum(int(m.get("n_dropped_size", 0)) for m in metas)
+    n_dropped_outside = sum(int(m.get("n_dropped_outside_wood", 0)) for m in metas)
+    n_frames_with_knots = sum(1 for m in metas if int(m.get("n_knots_kept", 0)) > 0)
     print(
         "\npith summary: yolo=%d propagation=%d none=%d (flagged_disagreement=%d, τ=%.1f)"
         % (n_yolo, n_prop, n_none, n_disagree, tau_flag)
     )
     print(
-        "knot summary: %d knots across %d/%d frames (mean %.2f/frame)"
-        % (n_knots_total, n_frames_with_knots, len(metas), n_knots_total / max(1, len(metas)))
+        "knot summary: kept %d/%d (dropped %d <%dpx, %d outside wood); %d/%d frames with knots (mean %.2f/frame)"
+        % (
+            n_knots_kept,
+            n_knots_raw,
+            n_dropped_size,
+            args.knot_min_px,
+            n_dropped_outside,
+            n_frames_with_knots,
+            len(metas),
+            n_knots_kept / max(1, len(metas)),
+        )
     )
 
     if args.upload:
