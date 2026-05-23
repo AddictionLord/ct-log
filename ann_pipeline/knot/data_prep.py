@@ -133,7 +133,19 @@ def main() -> None:
         default=8,
         help="Half side of the square bbox placed around each Pith point (so total side = 2*half).",
     )
+    parser.add_argument(
+        "--exclude_pages",
+        type=str,
+        default="",
+        help="Comma-separated 'subset:page' pairs to drop entirely (e.g. '4:7,4:49'). Useful for holdout-eval splits.",
+    )
     args = parser.parse_args()
+
+    excluded = set()
+    if args.exclude_pages:
+        for tok in args.exclude_pages.split(","):
+            sub, pg = tok.strip().split(":")
+            excluded.add((sub.strip(), int(pg)))
 
     out_dir = pathlib.Path(args.out_dir)
     for split in ("train", "val"):
@@ -150,6 +162,16 @@ def main() -> None:
             print(f"  skipping subset {subset_id}: no ann/ subdir")
             continue
         ann_files = find_annotated_slices(sm_dir)
+        if excluded:
+            kept = []
+            for f in ann_files:
+                page_num = int(f.replace("page_", "").split(".")[0])
+                if (subset_id, page_num) not in excluded:
+                    kept.append(f)
+            dropped = len(ann_files) - len(kept)
+            if dropped:
+                print(f"  subset {subset_id}: excluded {dropped} pages")
+            ann_files = kept
         rng.shuffle(ann_files)
         n_val = max(1, int(len(ann_files) * args.val_frac)) if ann_files else 0
         for f in ann_files[:n_val]:
