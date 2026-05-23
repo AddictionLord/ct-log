@@ -162,6 +162,83 @@ Already re-uploaded as `auto_3_anchors_from_rosta_v2` (dataset id 1138708).
    - 8 frames tagged `[REVIEW: ...]` (5 pith disagreements, 3 propagation
      missing). YOLO fired on every frame.
 4. ⏸ **3b parked** — needs denser anchors before retest is worthwhile.
+5. ✅ Subset 4 refreshed (16 → 45 anchors).
+6. ✅ Propagation re-run uploaded as `auto_4_propagation_45anchors`
+   (dataset 1139090).
+7. ✅ Proper holdout eval (see below) — replaces the n=3 leakage-tainted
+   comparison from step 3.
+8. ✅ **v2 pipeline shipped** as `auto_4_combined_v2` (dataset 1139705).
+   See "Combined v2 recipe" below.
+
+## Holdout eval (proper comparison, leakage-free)
+
+The original 3-frame comparison had two problems: (a) tiny n, (b) 13/16
+subset-4 anchors were in YOLO's training set, so YOLO got partial credit for
+memorisation. With 45 anchors available we can afford a real split.
+
+**Protocol**: 80/20 stratified split of the 45 annotated pages, every 5th.
+- holdout (9): 7, 49, 103, 152, 175, 214, 236, 247, 285
+- train (36): the rest
+
+Both methods retrained/repropagated without holdouts. Anchor distance to
+nearest training anchor ranges 1–11 frames per holdout, mixing the "near" (≤5)
+and "far" (>5) regimes characterised by the LOO sweep.
+
+Knot matching is IoU-Hungarian at IoU≥0.30 between per-instance masks.
+
+### Results (yolo11n + holdout-free weights)
+
+| metric | YOLO+SAM2 (default NMS) | YOLO+SAM2 (iou=0.5) | propagation |
+|---|---|---|---|
+| F1 (all 9 frames) | 0.67 | **0.78** | 0.55 |
+| F1 (near, ≤5fr) | 0.78 | **0.90** | 0.60 |
+| F1 (far, >5fr) | 0.00 | 0.00 | 0.00 |
+| precision (all) | 0.64 | **0.90** | 0.67 |
+| recall (all) | 0.69 | 0.69 | 0.46 |
+| matched mean IoU | 0.58 | 0.54 | **0.75** |
+| matched mean Dice | 0.73 | 0.69 | **0.84** |
+| pith mean dist (px) | 1.18 | 1.18 | 1.85 |
+
+### Findings
+
+1. **YOLO NMS iou=0.7 → 0.5 is the single biggest win**: F1 0.67 → 0.78 with
+   zero recall change. Removes 4 of 5 duplicate-detection FPs. Mask-IoU NMS
+   gives the same numbers — duplicates are the same problem at both layers.
+2. **YOLO+SAM2 wins on detection**, propagation wins on mask quality when it
+   does match. They complement: YOLO+SAM2 for what's there, propagation for
+   shape refinement (if we ever want it; v2 just uses YOLO+SAM2 masks).
+3. **yolo11s did not improve over yolo11n** at this training-set size
+   (96 train images). Bigger backbone gave identical F1, slightly worse IoU.
+   Dataset is the bottleneck, not capacity.
+4. **Far regime (>5 fr from anchor) is broken for both methods.** Only 2 GT
+   knots in 5 far frames so the signal is weak, but propagation's earlier
+   distance cliff is confirmed and YOLO doesn't pick up the slack.
+5. **Small knots (<200 px)**: 0 matched by either method. Open question
+   whether to invest in more small-knot annotations or change architecture.
+
+## Combined v2 recipe (shipped as `auto_4_combined_v2`, dataset 1139705)
+
+Inputs:
+- YOLO weights: `yolo11n_v2_all45/weights/best.pt` (trained on all 45
+  subset-4 anchors + subsets 1, 2; no holdout exclusion since v2 is for
+  production, not evaluation).
+- Propagation: `out/result.npz` (45-anchor full-volume propagation).
+- SAM2 image predictor for box→mask.
+
+Per-frame rule:
+- **Knot** = YOLO+SAM2 with conf=0.25, **NMS iou=0.5**. One Supervisely Knot
+  object per detection. No propagation fallback (eval showed it hurts more
+  than helps).
+- **Pith** = YOLO highest-conf bbox centre at conf=0.10; falls back to
+  propagation pith centroid if YOLO misses. `[REVIEW: ...]` description tag
+  if YOLO/prop disagree by ≥τ_flag or either is missing.
+- **Wood** = largest_cc(threshold(t=30) ∪ propagation_wood ∪ knot_mask ∪
+  pith). Knot mask in the union ensures wood encloses every annotated knot.
+- **τ_flag** auto = mean + 3σ of YOLO-vs-prop pith distance (here 10.51 px;
+  μ=2.70, σ=2.60, max=25.18 across 289 frames where both fire).
+
+Stats: 270 knots across 133/292 frames (mean 0.92/frame), 292 pith (all YOLO),
+5 frames flagged for pith review.
 
 ## Open question: smart-tool workflow
 
@@ -184,9 +261,15 @@ the more visible failure mode.
 - `run.py` — sparse-anchor propagation across the volume.
 - `render_overlays.py` — pith-as-centroid visualisation from `result.npz`.
 - `upload.py` — encode + upload to Supervisely (wood-includes-knot fix applied).
-- `compare_methods.py` — YOLO vs propagation head-to-head on 3 val frames.
-- `sweep_distance.py` — leave-one-out distance sweep (currently running).
-- `out/result.npz` — propagated label volume for subset 4.
-- `out/overlays/` — sample frame overlays.
-- `out/compare/` — head-to-head metrics.
-- `out/sweep/` — leave-one-out output (pending).
+- `compare_methods.py` — *deprecated*. The n=3 leaky comparison; superseded by
+  `holdout_eval.py`.
+- `sweep_distance.py` — leave-one-out distance sweep across all anchors.
+- `holdout_eval.py` — 80/20 holdout eval, IoU-Hungarian matching, P/R/F1,
+  size stratification, YOLO PR sweep. Supports `--yolo_nms_iou` and
+  `--mask_nms_iou`. Caches propagation to `prop_pred_holdout_free.npz`.
+- `visualize_holdout_grid.py` — TP/FP/FN visual grid for the 9 holdout frames.
+- `build_combined_annotations.py` — v2 pipeline (YOLO+SAM2 knots, YOLO pith,
+  union wood). Currently configured for `yolo11n_v2_all45` + `result.npz`.
+- `out/result.npz` — propagated label volume for subset 4 (45 anchors).
+- `out/holdout_eval/` — eval outputs (per_page.csv, summary.csv, visual grid).
+- `out/holdout_eval_*` — NMS-knob sweep variants.
