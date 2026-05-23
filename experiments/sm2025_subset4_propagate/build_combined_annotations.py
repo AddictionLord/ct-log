@@ -35,6 +35,7 @@ import shutil
 from typing import Dict, List, Optional, Tuple
 
 from ann_pipeline.wood.detectors import threshold_largest_cc
+import cv2
 import numpy as np
 from PIL import Image
 from sam2.build_sam import build_sam2
@@ -55,6 +56,7 @@ CLASS_REGISTRY = [
 
 SOURCE_IMG_DIR = "/mnt/D/datasets/ct_log/375492_SM_2025/4/img"
 DEFAULT_YOLO_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_v2_all45/weights/best.pt"
+DEFAULT_YOLO_OBB_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt"
 SAM_CHECKPOINT = "/mnt/D/models/MedSAM2/MedSAM2_CTLesion.pt"
 SAM_MODEL_CFG = "/home/mary/code/ct-log/thirdparty/MedSAM2/sam2/configs/sam2.1_hiera_t512.yaml"
 
@@ -154,6 +156,54 @@ def yolo_sam_knots(
     return masks
 
 
+def _low_res_mask(binary_mask: np.ndarray, size: int = 128) -> np.ndarray:
+    low = cv2.resize(binary_mask.astype(np.uint8), (size, size), interpolation=cv2.INTER_NEAREST)
+    logits = np.where(low > 0, 10.0, -10.0).astype(np.float32)
+    return logits[None]
+
+
+def _clip_to_bbox(mask: np.ndarray, aabb: np.ndarray) -> np.ndarray:
+    h, w = mask.shape
+    x1, y1, x2, y2 = aabb.astype(int)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
+    out = np.zeros_like(mask)
+    out[y1:y2, x1:x2] = mask[y1:y2, x1:x2]
+    return out
+
+
+def yolo_obb_sam_knots(
+    yolo_obb_model: YOLO,
+    sam_predictor: SAM2ImagePredictor,
+    img_rgb: np.ndarray,
+    conf: float,
+    nms_iou: float,
+) -> List[np.ndarray]:
+    """Return per-instance knot masks via YOLO-OBB (oriented boxes) -> SAM2 with
+    rasterised-OBB mask_input prior + AABB-of-OBB box prompt + bbox clip."""
+    res = yolo_obb_model.predict(img_rgb, conf=conf, iou=nms_iou, verbose=False)[0]
+    if res.obb is None or len(res.obb) == 0:
+        return []
+    xyxyxyxy = res.obb.xyxyxyxy.cpu().numpy()
+    h, w = img_rgb.shape[:2]
+    masks: List[np.ndarray] = []
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        sam_predictor.set_image(img_rgb)
+        for corners in xyxyxyxy:
+            obb_raster = np.zeros((h, w), dtype=np.uint8)
+            cv2.fillPoly(obb_raster, [corners.astype(np.int32)], 1)
+            low = _low_res_mask(obb_raster.astype(bool))
+            x1 = max(0, int(np.floor(corners[:, 0].min())))
+            y1 = max(0, int(np.floor(corners[:, 1].min())))
+            x2 = min(w, int(np.ceil(corners[:, 0].max())))
+            y2 = min(h, int(np.ceil(corners[:, 1].max())))
+            aabb = np.array([x1, y1, x2, y2], dtype=np.float32)
+            m, _, _ = sam_predictor.predict(box=aabb, mask_input=low, multimask_output=False)
+            mask = m[0].astype(bool)
+            masks.append(_clip_to_bbox(mask, aabb))
+    return masks
+
+
 def largest_cc(mask: np.ndarray) -> np.ndarray:
     labelled, n = ndi.label(mask.astype(np.uint8))
     if n == 0:
@@ -168,6 +218,7 @@ def build_annotation(
     img_rgb: np.ndarray,
     pred_frame: np.ndarray,
     yolo_model: YOLO,
+    yolo_obb_model: Optional[YOLO],
     sam_predictor: SAM2ImagePredictor,
     wood_thresh: int,
     yolo_conf_pith: float,
@@ -182,7 +233,10 @@ def build_annotation(
     prop_wood = pred_frame == CLASS_IDS["Wood"]
     prop_pith = pred_frame == CLASS_IDS["Pith"]
 
-    knot_masks = yolo_sam_knots(yolo_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
+    if yolo_obb_model is not None:
+        knot_masks = yolo_obb_sam_knots(yolo_obb_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
+    else:
+        knot_masks = yolo_sam_knots(yolo_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
     combined_knot_mask = np.zeros((h, w), dtype=bool)
     for km in knot_masks:
         combined_knot_mask |= km
@@ -279,6 +333,7 @@ def write_export(
     pages: np.ndarray,
     pred: np.ndarray,
     yolo_model: YOLO,
+    yolo_obb_model: Optional[YOLO],
     sam_predictor: SAM2ImagePredictor,
     wood_thresh: int,
     yolo_conf_pith: float,
@@ -323,6 +378,7 @@ def write_export(
             img_rgb,
             pred[i],
             yolo_model,
+            yolo_obb_model,
             sam_predictor,
             wood_thresh,
             yolo_conf_pith,
@@ -388,6 +444,12 @@ def main() -> None:
     parser.add_argument("--out_dir", default="/tmp/sm2025_subset4_combined_v2")
     parser.add_argument("--dataset_name", default="auto_4_combined_v2")
     parser.add_argument("--yolo_weights", default=DEFAULT_YOLO_WEIGHTS)
+    parser.add_argument(
+        "--yolo_obb_weights",
+        default=None,
+        help="If set, use a YOLO-OBB model for knots (with SAM2 mask_input prior). "
+        "Recommended: %s" % DEFAULT_YOLO_OBB_WEIGHTS,
+    )
     parser.add_argument("--wood_thresh", type=int, default=30)
     parser.add_argument("--yolo_conf_pith", type=float, default=0.10)
     parser.add_argument("--yolo_conf_knot", type=float, default=0.25)
@@ -404,6 +466,9 @@ def main() -> None:
     print("loaded %d frames from %s" % (len(pages), args.npz))
 
     yolo_model = YOLO(args.yolo_weights)
+    yolo_obb_model = YOLO(args.yolo_obb_weights) if args.yolo_obb_weights else None
+    if yolo_obb_model is not None:
+        print("using YOLO-OBB knot model: %s" % args.yolo_obb_weights)
     print("building SAM2 image predictor ...")
     sam = build_sam2("//" + SAM_MODEL_CFG, SAM_CHECKPOINT)
     sam_predictor = SAM2ImagePredictor(sam)
@@ -430,6 +495,7 @@ def main() -> None:
         pages,
         pred,
         yolo_model,
+        yolo_obb_model,
         sam_predictor,
         args.wood_thresh,
         args.yolo_conf_pith,
