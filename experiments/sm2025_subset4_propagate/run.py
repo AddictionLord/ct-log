@@ -32,7 +32,8 @@ from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor_npz
 import torch
 
-SM_DIR = "/mnt/D/datasets/ct_log/375492_SM_2025/4"
+SUBSET_ID = os.environ.get("CT_SUBSET", "4")
+SM_DIR = "/mnt/D/datasets/ct_log/375492_SM_2025/%s" % SUBSET_ID
 IMG_DIR = join(SM_DIR, "img")
 ANN_DIR = join(SM_DIR, "ann")
 OUT_DIR = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out"

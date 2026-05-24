@@ -54,7 +54,7 @@ CLASS_REGISTRY = [
     {"title": "Pith", "shape": "point", "color": "#FF03D6"},
 ]
 
-SOURCE_IMG_DIR = "/mnt/D/datasets/ct_log/375492_SM_2025/4/img"
+SOURCE_IMG_DIR = "/mnt/D/datasets/ct_log/375492_SM_2025/%s/img" % os.environ.get("CT_SUBSET", "4")
 DEFAULT_YOLO_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_v2_all45/weights/best.pt"
 DEFAULT_YOLO_OBB_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt"
 SAM_CHECKPOINT = "/mnt/D/models/MedSAM2/MedSAM2_CTLesion.pt"

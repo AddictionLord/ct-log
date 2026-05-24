@@ -277,8 +277,14 @@ def main() -> None:
     if first_a > 0:
         sub = vol[: first_a + 1]
         a_page = anchors[0]
-        obb_seeds = obb_seeds_for_segment(-1, first_a)
-        obb_seeds = {k + 1: v for k, v in obb_seeds.items()}
+        # Left tail: segment is vol[0..first_a], anchor B sits at local index first_a.
+        # Use OBB seeds at local positions 0..first_a-1 (i.e. all non-anchor frames).
+        obb_seeds: Dict[int, np.ndarray] = {}
+        for gi in range(first_a):
+            p = pages[gi]
+            m = obb_per_page.get(p)
+            if m is not None and m.sum() > 0:
+                obb_seeds[gi] = m
         seg = propagate_segment_obb(
             predictor,
             sub,

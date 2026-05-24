@@ -3,6 +3,48 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_3_obb_aug_points_v1 — dataset id 1139796
+**Date**: 2026-05-24. **Knot strategy** (subset 3, hardwood): SAM2 image-
+predictor with **box + 5 axis positives + 4 OBB-derived negatives** seeded
+into MedSAM2 video predictor at non-anchor frames, plus 19 hand-annotated
+anchors. Per-frame SAM masks (clipped to AABB, largest CC) replace the
+ellipse-mask seeds that v2.2 used.
+
+This is the **first deployment recipe that produces natural, image-grounded
+knot shapes on hardwood**. Previous attempts on subset 3:
+- obb_only_v1: ellipse-shaped fallbacks (model couldn't refine on hardwood texture).
+- obb_aug_v1 (ellipse): same problem, anchors didn't fix non-anchor frames.
+- pure_propagation_v1: cleaner shapes but only at/near anchors.
+
+The SAM-prompt seeds carry image-derived shape information into the video
+predictor's memory bank, so propagation in between anchors uses real knot
+shapes instead of ellipses.
+
+Stats: 262 knots / 137 frames (vs 257/134 for ellipse-seeded variant; same
+volume of detections, much better shape quality).
+
+How to regenerate:
+```
+# 1. Run point-seeded augmented propagation
+CT_SUBSET=3 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented_points \
+    --out_name result_subset3_obb_aug_points.npz
+
+# 2. Build + upload
+set -a && source .env && set +a
+CT_SUBSET=3 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_subset3_obb_aug_points.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 --pith_exclusion_px 25 --min_eccentricity 0.7 --min_solidity 0.85 --fill_holes \
+    --dataset_name auto_3_obb_aug_points_v1 \
+    --out_dir /tmp/sm2025_subset3_obb_aug_points_v1 \
+    --upload
+```
+
+Status: shipped. **Recommended deployment recipe for hardwood / OOD logs.**
+Also worth trying as the default on softwood (next: subset 4 v2.3).
+
+---
+
 ## Naming convention
 
 We have two propagation pipelines. The dataset names on Supervisely are
@@ -544,6 +586,25 @@ Status: superseded.
     pith, so short ones naturally have centroids close to it. Bbox-contains-
     pith rule catches the wrap-around artifact (image #5) without needing a
     wide exclusion radius. Tightened to 25 px in v2.1.
+
+14. **Hardwood / OOD logs need different prompting**. Subset 3 (likely
+    hardwood) propagation falls back to ellipse-shaped outputs because
+    SAM2's image features don't activate strongly on the heterogeneous
+    grain. Switching from ellipse `mask_input` seeds to **box + N axis
+    positives + 4 OBB-derived negatives via the SAM2 *image* predictor**
+    produces visually natural knot shapes on the same frames. Recipe
+    (`smoke_test_subset3_p170.py`):
+    - AABB of YOLO-OBB as `box`
+    - 5 positive points equally spaced along the OBB's long axis
+    - 4 negative points just outside the OBB: 2 perpendicular to long axis
+      at mid-length, 2 along long axis beyond the tips (~10% outset)
+    - clip to AABB, keep largest connected component
+    No propagation needed — per-frame independent inference. Speckle
+    artifacts the AABB-clip alone would miss get dropped by largest-CC.
+    Hard OBB-polygon clip was tried but introduces unnatural straight
+    edges; largest-CC alone is cleaner. **Promising direction for both
+    OOD (hardwood) deployment and as a per-frame seed signal that could
+    augment the video propagator on softwoods.**
 
 # Open questions
 
