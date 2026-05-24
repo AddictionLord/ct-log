@@ -3,6 +3,55 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_4_obb_augmented_propagation_v2_1 — dataset id 1139777
+**Date**: 2026-05-24. **Knot strategy**: OBB-augmented propagation + tuned anatomical filters.
+
+What changed vs v2:
+- `--pith_exclusion_px 40 → 25`. Visual audit on pages 41, 156, 202 showed
+  v2 was dropping legit short radial knots whose centroids sat 25-40 px from
+  the pith. Real knots reach close to the pith because they grow from it.
+  Lower threshold preserves those. Pith-bloom artifacts (image #5) still
+  caught by the orthogonal "bbox contains pith" rule.
+- **Added `--min_solidity 0.85`**. Solidity = area / convex_hull_area.
+  Catches star/cross propagation artifacts that pass the eccentricity
+  threshold by having high aspect ratio but concave shape. Star on page 294
+  had ecc=0.713 (barely above 0.7) but solidity=0.785 — cleanly rejected
+  at 0.85. The page 38 cross artifact (already caught by eccentricity 0.327)
+  also fails solidity 0.754 as defense in depth.
+
+Stats: 177 knots / 86 frames (0.61/frame, vs 200/110 in v2). 3 frames flagged
+for pith review.
+
+Filter breakdown (382 raw CCs from propagation):
+- 142 dropped <150 px
+- 10 dropped near pith (within 25 px)
+- 8 dropped low eccentricity (<0.7)
+- 45 dropped low solidity (<0.85)
+- 177 kept
+
+Recovered (compared to v2):
+- Page 41: small radial knot at centroid_dist=33 px (passed because <40)
+- Page 156: two small knots at centroid_dist=26 and 37 px
+- Page 202: small knot at centroid_dist=35 px
+
+How to regenerate:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 25 \
+    --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
+    --dataset_name auto_4_obb_augmented_propagation_v2_1 \
+    --out_dir /tmp/sm2025_subset4_obb_aug_v2_1 \
+    --upload
+```
+
+Status: shipped. New current baseline.
+
+---
+
 ## auto_4_obb_augmented_propagation_v2 — dataset id 1139775
 **Date**: 2026-05-24. **Knot strategy**: OBB-augmented propagation + anatomical filters.
 
@@ -293,7 +342,8 @@ Status: superseded.
 | auto_4_combined_v4 | (= v3 + wood-intersect + 50px filter, no-op) | 0.25 | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_combined_v5 | YOLO-OBB+SAM2 (mask_input prior) | 0.40 | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v1 | MedSAM2 video, anchor GT + OBB ellipse seeds → CCs | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
-| **auto_4_obb_augmented_propagation_v2** | **MedSAM2 video, anchor GT + OBB ellipse seeds → CCs + anatomical filters** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
+| auto_4_obb_augmented_propagation_v2 | MedSAM2 video + filters (pith 40px, ecc 0.7) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
+| **auto_4_obb_augmented_propagation_v2_1** | **MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
 
 # Key learnings (chronological)
 
@@ -348,12 +398,22 @@ Status: superseded.
     copied verbatim into SAM2 output ("rectangular masks" artifact, image
     #3). Inscribed ellipse matches natural knot shape — much cleaner.
 
-12. **Anatomical filters are cheap, effective post-processors**. Three rules
-    catch all the propagation-drift artifacts seen in v1:
-    - drop CCs with eccentricity <0.7 (catches cross/star shapes)
-    - drop CCs within 40 px of pith centroid (catches pith-blooms)
+12. **Anatomical filters are cheap, effective post-processors**. Four rules
+    catch most propagation-drift artifacts:
+    - drop CCs with eccentricity <0.7 (catches obvious cross/star shapes)
+    - drop CCs with solidity <0.85 (catches subtler concave shapes that pass
+      eccentricity, e.g. page 294 star at ecc=0.713 but solidity=0.785)
+    - drop CCs within 25 px of pith centroid OR containing the pith point
+      (catches pith-blooms but allows short radial knots that reach to the
+      pith)
     - drop CCs <150 px (catches noise blobs)
-    Page 38 cross artifact had ecc 0.327; legit knots are 0.83-0.99.
+    Real knots have ecc 0.85-0.99, solidity 0.94-0.97.
+
+13. **Pith filter at 40 px was too aggressive**. Pages 41/156/202 had legit
+    radial knots with centroids 25-40 px from pith — they grow *from* the
+    pith, so short ones naturally have centroids close to it. Bbox-contains-
+    pith rule catches the wrap-around artifact (image #5) without needing a
+    wide exclusion radius. Tightened to 25 px in v2.1.
 
 # Open questions
 
@@ -377,14 +437,15 @@ Status: superseded.
 
 Pure pipeline runs:
 ```
-# Current best — OBB-augmented propagation v2 (anatomical filters)
+# Current best — OBB-augmented propagation v2.1 (tuned anatomical filters)
 # Requires result_obb_aug_ellipse.npz from run_obb_augmented.py first.
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
     --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
     --knot_source prop_cc \
     --knot_min_px 150 \
-    --pith_exclusion_px 40 \
+    --pith_exclusion_px 25 \
     --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
     --dataset_name auto_4_obb_augmented_propagation_vN \
     --out_dir /tmp/sm2025_subset4_obb_aug_vN \
     --upload

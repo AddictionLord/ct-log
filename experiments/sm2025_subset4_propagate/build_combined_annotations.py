@@ -229,6 +229,7 @@ def build_annotation(
     knot_source: str = "yolo_sam",
     pith_exclusion_px: float = 0.0,
     min_eccentricity: float = 0.0,
+    min_solidity: float = 0.0,
 ) -> Tuple[dict, Dict[str, object]]:
     """Returns (Supervisely-format ann dict, per-frame metadata for logging).
 
@@ -243,6 +244,8 @@ def build_annotation(
         2. drop if pith point lies inside the CC (knot wrapping pith).
         3. drop if centroid distance to pith < pith_exclusion_px.
         4. drop if regionprops eccentricity < min_eccentricity.
+        5. drop if regionprops solidity < min_solidity (catches star/cross
+           artifacts that pass eccentricity but have concave shape).
     """
     h, w = img_gray.shape
     objects: List[dict] = []
@@ -302,6 +305,7 @@ def build_annotation(
     n_dropped_outside = 0
     n_dropped_pith = 0
     n_dropped_eccentricity = 0
+    n_dropped_solidity = 0
     for km in knot_masks:
         clipped = km & wood_final
         if clipped.sum() < knot_min_px:
@@ -319,13 +323,17 @@ def build_annotation(
             if inside_cc or dist_to_pith < pith_exclusion_px:
                 n_dropped_pith += 1
                 continue
-        if min_eccentricity > 0.0:
+        if min_eccentricity > 0.0 or min_solidity > 0.0:
             from skimage import measure as _measure
 
             props = _measure.regionprops(clipped.astype(np.uint8))
-            if props and props[0].eccentricity < min_eccentricity:
-                n_dropped_eccentricity += 1
-                continue
+            if props:
+                if min_eccentricity > 0.0 and props[0].eccentricity < min_eccentricity:
+                    n_dropped_eccentricity += 1
+                    continue
+                if min_solidity > 0.0 and props[0].solidity < min_solidity:
+                    n_dropped_solidity += 1
+                    continue
         obj = make_bitmap_object("Knot", clipped.astype(np.uint8))
         if obj is not None:
             objects.append(obj)
@@ -345,11 +353,17 @@ def build_annotation(
         "pith_source": pith_source,
         "pith_disagreement_px": pith_disagreement_px,
         "n_knots_raw": len(knot_masks),
-        "n_knots_kept": len(knot_masks) - n_dropped_size - n_dropped_outside - n_dropped_pith - n_dropped_eccentricity,
+        "n_knots_kept": len(knot_masks)
+        - n_dropped_size
+        - n_dropped_outside
+        - n_dropped_pith
+        - n_dropped_eccentricity
+        - n_dropped_solidity,
         "n_dropped_size": n_dropped_size,
         "n_dropped_outside_wood": n_dropped_outside,
         "n_dropped_pith": n_dropped_pith,
         "n_dropped_eccentricity": n_dropped_eccentricity,
+        "n_dropped_solidity": n_dropped_solidity,
     }
     return ann, meta
 
@@ -395,6 +409,7 @@ def write_export(
     knot_source: str = "yolo_sam",
     pith_exclusion_px: float = 0.0,
     min_eccentricity: float = 0.0,
+    min_solidity: float = 0.0,
 ) -> List[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     project_meta = {
@@ -444,6 +459,7 @@ def write_export(
             knot_source=knot_source,
             pith_exclusion_px=pith_exclusion_px,
             min_eccentricity=min_eccentricity,
+            min_solidity=min_solidity,
         )
         meta["page"] = int(p)
         metas.append(meta)
@@ -538,6 +554,12 @@ def main() -> None:
         default=0.0,
         help="Drop knot CCs with regionprops eccentricity below this. Real knots are ~0.85-0.99; default 0 = off.",
     )
+    parser.add_argument(
+        "--min_solidity",
+        type=float,
+        default=0.0,
+        help="Drop knot CCs with regionprops solidity below this. Catches star/cross artifacts that pass eccentricity. Real knots ~0.94-0.97; default 0 = off.",
+    )
     parser.add_argument("--tau_flag", type=float, default=None, help="If unset, computed from data (mean+3σ).")
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--project_id", type=int, default=376641)
@@ -590,6 +612,7 @@ def main() -> None:
         knot_source=args.knot_source,
         pith_exclusion_px=args.pith_exclusion_px,
         min_eccentricity=args.min_eccentricity,
+        min_solidity=args.min_solidity,
     )
 
     n_yolo = sum(1 for m in metas if m["pith_source"] == "yolo")
@@ -604,13 +627,14 @@ def main() -> None:
     n_dropped_outside = sum(int(m.get("n_dropped_outside_wood", 0)) for m in metas)
     n_dropped_pith = sum(int(m.get("n_dropped_pith", 0)) for m in metas)
     n_dropped_eccentricity = sum(int(m.get("n_dropped_eccentricity", 0)) for m in metas)
+    n_dropped_solidity = sum(int(m.get("n_dropped_solidity", 0)) for m in metas)
     n_frames_with_knots = sum(1 for m in metas if int(m.get("n_knots_kept", 0)) > 0)
     print(
         "\npith summary: yolo=%d propagation=%d none=%d (flagged_disagreement=%d, τ=%.1f)"
         % (n_yolo, n_prop, n_none, n_disagree, tau_flag)
     )
     print(
-        "knot summary: kept %d/%d (dropped %d <%dpx, %d outside wood, %d near pith, %d low eccentricity); %d/%d frames with knots (mean %.2f/frame)"
+        "knot summary: kept %d/%d (dropped %d <%dpx, %d outside wood, %d near pith, %d low eccentricity, %d low solidity); %d/%d frames with knots (mean %.2f/frame)"
         % (
             n_knots_kept,
             n_knots_raw,
@@ -619,6 +643,7 @@ def main() -> None:
             n_dropped_outside,
             n_dropped_pith,
             n_dropped_eccentricity,
+            n_dropped_solidity,
             n_frames_with_knots,
             len(metas),
             n_knots_kept / max(1, len(metas)),
