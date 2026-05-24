@@ -3,6 +3,90 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_4_obb_augmented_propagation_v2 — dataset id 1139775
+**Date**: 2026-05-24. **Knot strategy**: OBB-augmented propagation + anatomical filters.
+
+What changed vs v1:
+- **Anatomical filters** added to `build_combined_annotations.py`:
+  - `--knot_min_px 150` (up from 50): noise floor. Real knots in this dataset
+    are 500-1500 px; CCs <150 px are statistically junk.
+  - `--pith_exclusion_px 40`: drop CCs whose centroid lies within 40 px of
+    the pith point, or that contain the pith point. Catches "knot wraps
+    pith" propagation drifts (e.g. image #4, #5 review feedback).
+  - `--min_eccentricity 0.7`: drop CCs with regionprops eccentricity below
+    0.7. Real knots are 0.83-0.99 (elongated radial blobs). The "cross-knot"
+    propagation artifact on page 38 had ecc 0.327 — cleanly rejected.
+
+Stats: 200 knots / 110 frames (0.68/frame, vs 262 / 139 in v1). 3 frames
+flagged for pith review.
+
+How to regenerate:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 40 \
+    --min_eccentricity 0.7 \
+    --dataset_name auto_4_obb_augmented_propagation_v2 \
+    --out_dir /tmp/sm2025_subset4_obb_aug_v2 \
+    --upload
+```
+
+Status: shipped. Likely the new baseline — awaiting Rostislav's review.
+
+---
+
+## auto_4_obb_augmented_propagation_v1 — dataset id 1139769
+**Date**: 2026-05-24. **Knot strategy**: single-class MedSAM2 video propagation
+seeded with anchor GT + YOLO-OBB ellipse rasters on non-anchor frames.
+
+What changed vs v5 (paradigm shift):
+- **Knots now come from propagation, not from the SAM2 image predictor.**
+  We feed the MedSAM2 video predictor the same 45 anchor GT masks AND YOLO-OBB
+  detections at every non-anchor frame where YOLO fires conf≥0.40. All knot
+  seeds are merged into a single tracked object (single-class semantics);
+  per-instance bitmaps are split via connected components only at the final
+  Supervisely encoding stage.
+- **Seed shape is an inscribed ellipse**, not the OBB rectangle. Rectangular
+  seeds caused SAM2 to copy the rectangle into the output (rect-shaped masks).
+  Ellipse aligns with natural knot shape — much cleaner output. Implemented
+  in `run_obb_augmented.py` as `--seed_shape ellipse` (default).
+- Pith and Wood pipelines unchanged from v5.
+
+Visual verdict (compared to v5 baseline): tighter shapes on many frames, and
+recovers some knots OBB+SAM2 image-predictor missed. Some artifacts remain
+(blobs near pith, occasional cross/star shapes) — addressed in v2 filters.
+
+Stats from the propagation output (`result_obb_aug_ellipse.npz`):
+- 160 frames with knots (vs 82 in original prop, 162 in rect-seed variant)
+- Mean 1446 px/frame-with-knot (vs 2584 in original prop)
+- Total 231k knot pixels (vs 212k in original prop, 296k in rect variant)
+
+Final encoded counts: 262 knots / 139 frames (0.90/frame).
+
+Files added/changed:
+- `experiments/sm2025_subset4_propagate/run_obb_augmented.py` — new
+  propagation script. Doesn't modify `run.py` so we can A/B both.
+- `experiments/sm2025_subset4_propagate/out/result_obb_augmented.npz` —
+  rectangle-seed propagation output.
+- `experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz` —
+  ellipse-seed propagation output (the one used for v1/v2).
+- `experiments/sm2025_subset4_propagate/compare_obb_aug.py` — diagnostic
+  side-by-side (original prop / aug prop / v5).
+- `experiments/sm2025_subset4_propagate/build_combined_annotations.py` —
+  added `--knot_source prop_cc` flag.
+
+How to regenerate the propagation:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented \
+    --seed_shape ellipse --out_name result_obb_aug_ellipse.npz
+```
+
+Status: superseded by v2 (same recipe + anatomical filters).
+
+---
+
 ## auto_4_combined_v5 — dataset id 1139719
 **Date**: 2026-05-23. **Knot strategy**: YOLO-OBB + SAM2 mask_input prior, **conf=0.40**.
 
@@ -207,7 +291,9 @@ Status: superseded.
 | auto_4_combined_v2 | YOLO+SAM2 (45-anchor model, AABB) | 0.25 | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
 | auto_4_combined_v3 | YOLO-OBB+SAM2 (mask_input prior) | 0.25 | YOLO bbox (45-anchor model) | threshold ∪ propagation ∪ knot ∪ pith |
 | auto_4_combined_v4 | (= v3 + wood-intersect + 50px filter, no-op) | 0.25 | YOLO bbox (45-anchor model) | as v3 |
-| **auto_4_combined_v5** | **YOLO-OBB+SAM2 (mask_input prior)** | **0.40** | YOLO bbox (45-anchor model) | as v3 |
+| auto_4_combined_v5 | YOLO-OBB+SAM2 (mask_input prior) | 0.40 | YOLO bbox (45-anchor model) | as v3 |
+| auto_4_obb_augmented_propagation_v1 | MedSAM2 video, anchor GT + OBB ellipse seeds → CCs | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
+| **auto_4_obb_augmented_propagation_v2** | **MedSAM2 video, anchor GT + OBB ellipse seeds → CCs + anatomical filters** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
 
 # Key learnings (chronological)
 
@@ -252,9 +338,29 @@ Status: superseded.
    ±0.02 between configurations are likely within noise. Trust visible mask
    quality and Rostislav's review over single-digit F1 differences.
 
+10. **OBB-augmented propagation > v5 visually**. Injecting YOLO-OBB rasters
+    as additional knot seeds at non-anchor frames doubles frame-with-knot
+    coverage (82 → 160) and tightens average mask 29% (2584 → 1446 px).
+    Single-class knot semantics in MedSAM2 video predictor avoids identity-
+    tracking complexity. Shipped as augmented_propagation_v1/v2.
+
+11. **OBB seed shape matters: ellipse beats rectangle**. Rect seeds get
+    copied verbatim into SAM2 output ("rectangular masks" artifact, image
+    #3). Inscribed ellipse matches natural knot shape — much cleaner.
+
+12. **Anatomical filters are cheap, effective post-processors**. Three rules
+    catch all the propagation-drift artifacts seen in v1:
+    - drop CCs with eccentricity <0.7 (catches cross/star shapes)
+    - drop CCs within 40 px of pith centroid (catches pith-blooms)
+    - drop CCs <150 px (catches noise blobs)
+    Page 38 cross artifact had ecc 0.327; legit knots are 0.83-0.99.
+
 # Open questions
 
-- Rostislav's verdict on v5 vs v3 vs v2: which visual quality wins?
+- Rostislav's verdict on augmented_propagation_v2 vs v5: which visual quality wins?
+- Holdout eval on the OBB-augmented propagation pipeline (currently only v5
+  has been holdout-evaluated). Need to retrain OBB without holdouts and
+  rerun augmented propagation excluding holdout anchors.
 - Small-knot recall: 0/n matched at IoU≥0.3 by either method on the holdout
   eval. Open whether to push for more small-knot annotations or change
   inference resolution.
@@ -264,21 +370,44 @@ Status: superseded.
   localisation vs the current bbox-centroid approach?
 - Wood UNet: replace threshold (fails on dark slices) with a small UNet
   trained on the 45 wood annotations.
+- Seed-every-N-frames experiment: does sparser OBB seeding (every 2-3 non-
+  anchor frames) improve or hurt augmented propagation? Not tested.
 
 # How to continue
 
 Pure pipeline runs:
 ```
-# v3 (current best)
+# Current best — OBB-augmented propagation v2 (anatomical filters)
+# Requires result_obb_aug_ellipse.npz from run_obb_augmented.py first.
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
-    --yolo_obb_weights /home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt \
-    --dataset_name auto_4_combined_v4 \
-    --out_dir /tmp/sm2025_subset4_combined_v4 \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 40 \
+    --min_eccentricity 0.7 \
+    --dataset_name auto_4_obb_augmented_propagation_vN \
+    --out_dir /tmp/sm2025_subset4_obb_aug_vN \
+    --upload
+
+# Regenerate the augmented propagation npz (only needed if YOLO-OBB weights changed):
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented \
+    --seed_shape ellipse --out_name result_obb_aug_ellipse.npz
+
+# Previous baseline — v5 (pure YOLO-OBB+SAM2 image predictor)
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --yolo_obb_weights ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt \
+    --yolo_conf_knot 0.40 \
+    --dataset_name auto_4_combined_vN \
+    --out_dir /tmp/sm2025_subset4_combined_vN \
     --upload
 ```
 
 Diagnostics (no upload, fast):
 ```
+# OBB-augmented vs original prop vs v5 — non-anchor frames
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.compare_obb_aug \
+    --pages 36 37 42 53 89 95 128 200 --conf 0.40
+
 # SAM2 prompt variant sweep (for AABB pipeline)
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.compare_sam_prompts \
     --pages 39 73 154 238 239 268 --corner_inset 0.1
