@@ -565,12 +565,76 @@ Status: superseded.
 
 # How to continue
 
-Pure pipeline runs:
+## Supervisely auth + project
+
+All upload paths use the Supervisely SDK. Auth is via env var:
+
+- **`SUPERVISELY_TOKEN`** is in `/home/mary/code/ct-log/.env` (gitignored).
+- Before any `--upload` command, load it:
+  ```
+  set -a && source .env && set +a && conda run -n ct-log python -m ...
+  ```
+  The `set -a` makes every variable from `.env` exported, then unsets the
+  flag with `set +a`. Without this, `--upload` will fail with
+  `SUPERVISELY_TOKEN not set`.
+
+- **Target project ID**: `376641` (`SM_2025_automatic_annotations`).
+  Hardcoded as `--project_id` default in `build_combined_annotations.py`.
+
+- **Server**: `https://app.supervisely.com` (default; override via
+  `--server` if needed).
+
+## Supervisely operations
+
+### Upload a new dataset (via build_combined_annotations)
+The pipeline scripts handle this. Add `--upload --dataset_name <name>`. The
+script will refuse if a dataset with that name already exists in the project.
+
+### Delete a dataset (e.g. to free a name for re-upload)
+```python
+# from repo root, with .env loaded
+conda run -n ct-log python -c "
+import os, supervisely as sly
+api = sly.Api(server_address='https://app.supervisely.com', token=os.environ['SUPERVISELY_TOKEN'])
+api.dataset.remove(<dataset_id>)
+"
 ```
-# Current best — OBB-augmented propagation v2.2 (filters + fill_holes)
-# Requires result_obb_aug_ellipse.npz from run_obb_augmented.py first.
-# NOTE: do NOT set --knot_closing_radius >0 — it fuses real adjacent knots
-# (the earlier v2.2 regression). Use --fill_holes for shape cleanup instead.
+Used this to replace the v2.2 regression (id 1139779) with the fill_holes
+recipe in the same name slot.
+
+### Fetch a dataset to local disk (e.g. when annotators add more frames)
+Use `ann_pipeline/scripts/fetch_supervisely_dataset.py`:
+```
+set -a && source .env && set +a
+conda run -n ct-log python -m ann_pipeline.scripts.fetch_supervisely_dataset \
+    --dataset_id 1137347 \
+    --out_dir /mnt/D/datasets/ct_log/375492_SM_2025/4
+```
+This pulls images + annotations into the subset layout `img/` + `ann/`.
+Used to refresh subset 4 after Rostislav added 29 new anchors.
+
+### List existing datasets
+```python
+conda run -n ct-log python -c "
+import os, supervisely as sly
+api = sly.Api(server_address='https://app.supervisely.com', token=os.environ['SUPERVISELY_TOKEN'])
+for ds in api.dataset.get_list(376641):
+    print(ds.id, ds.name)
+"
+```
+
+## Pure pipeline runs
+
+```
+# === Current best (with anchors): OBB-augmented anchor propagation v2.2 ===
+# Step 1 (only when YOLO-OBB weights change): regenerate the propagation npz
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented \
+    --seed_shape ellipse --out_name result_obb_aug_ellipse.npz
+
+# Step 2: build combined annotations + upload
+# NOTE: do NOT set --knot_closing_radius >0 — it fused real adjacent knots
+# in an earlier v2.2 regression. Use --fill_holes for shape cleanup instead.
+set -a && source .env && set +a
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
     --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
     --knot_source prop_cc \
@@ -583,11 +647,27 @@ conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combine
     --out_dir /tmp/sm2025_subset4_obb_aug_vN \
     --upload
 
-# Regenerate the augmented propagation npz (only needed if YOLO-OBB weights changed):
-conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented \
-    --seed_shape ellipse --out_name result_obb_aug_ellipse.npz
+# === Anchor-free path: OBB propagation v1 ===
+# Step 1: anchor-free propagation (knot-only output)
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_only \
+    --out_name result_obb_only.npz
 
-# Previous baseline — v5 (pure YOLO-OBB+SAM2 image predictor)
+# Step 2: build + upload (same filter stack as v2.2)
+set -a && source .env && set +a
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_only.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 25 \
+    --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
+    --fill_holes \
+    --dataset_name auto_4_obb_only_vN \
+    --out_dir /tmp/sm2025_subset4_obb_only_vN \
+    --upload
+
+# === Previous baseline — v5 (pure YOLO-OBB+SAM2 image predictor) ===
+set -a && source .env && set +a
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
     --yolo_obb_weights ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt \
     --yolo_conf_knot 0.40 \
