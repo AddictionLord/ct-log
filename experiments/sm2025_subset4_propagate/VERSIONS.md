@@ -3,6 +3,37 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_4_obb_augmented_propagation_v2_2 — dataset id 1139779
+**Date**: 2026-05-24. **Knot strategy**: v2.1 + binary_closing CC merge.
+
+What changed vs v2.1:
+- Added `--knot_closing_radius 3`. Applies `binary_closing(disk(3))` to the
+  knot mask before connected-component labeling. Merges adjacent fragmented
+  blobs (typical: propagation produced two CCs for what is anatomically one
+  knot — e.g. page 236 near-pith pair).
+
+Stats: 176 knots / 88 frames (0.60/frame, vs 177/86 in v2.1). 374 raw CCs
+post-closing (vs 382 in v2.1) — 8 duplicate fragment pairs fused.
+
+How to regenerate:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 25 \
+    --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
+    --knot_closing_radius 3 \
+    --dataset_name auto_4_obb_augmented_propagation_v2_2 \
+    --out_dir /tmp/sm2025_subset4_obb_aug_v2_2 \
+    --upload
+```
+
+Status: shipped. Current baseline.
+
+---
+
 ## auto_4_obb_augmented_propagation_v2_1 — dataset id 1139777
 **Date**: 2026-05-24. **Knot strategy**: OBB-augmented propagation + tuned anatomical filters.
 
@@ -343,7 +374,8 @@ Status: superseded.
 | auto_4_combined_v5 | YOLO-OBB+SAM2 (mask_input prior) | 0.40 | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v1 | MedSAM2 video, anchor GT + OBB ellipse seeds → CCs | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v2 | MedSAM2 video + filters (pith 40px, ecc 0.7) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
-| **auto_4_obb_augmented_propagation_v2_1** | **MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
+| auto_4_obb_augmented_propagation_v2_1 | MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
+| **auto_4_obb_augmented_propagation_v2_2** | **= v2.1 + binary_closing radius 3 (merges fragmented adjacent CCs)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
 
 # Key learnings (chronological)
 
@@ -437,7 +469,7 @@ Status: superseded.
 
 Pure pipeline runs:
 ```
-# Current best — OBB-augmented propagation v2.1 (tuned anatomical filters)
+# Current best — OBB-augmented propagation v2.2 (filters + CC merge)
 # Requires result_obb_aug_ellipse.npz from run_obb_augmented.py first.
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
     --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
@@ -446,6 +478,7 @@ conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combine
     --pith_exclusion_px 25 \
     --min_eccentricity 0.7 \
     --min_solidity 0.85 \
+    --knot_closing_radius 3 \
     --dataset_name auto_4_obb_augmented_propagation_vN \
     --out_dir /tmp/sm2025_subset4_obb_aug_vN \
     --upload

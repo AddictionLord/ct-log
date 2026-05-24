@@ -230,6 +230,7 @@ def build_annotation(
     pith_exclusion_px: float = 0.0,
     min_eccentricity: float = 0.0,
     min_solidity: float = 0.0,
+    knot_closing_radius: int = 0,
 ) -> Tuple[dict, Dict[str, object]]:
     """Returns (Supervisely-format ann dict, per-frame metadata for logging).
 
@@ -255,7 +256,14 @@ def build_annotation(
     prop_pith = pred_frame == CLASS_IDS["Pith"]
 
     if knot_source == "prop_cc":
-        lab, n_cc = ndi.label(prop_knot, structure=np.ones((3, 3), dtype=np.uint8))
+        if knot_closing_radius > 0:
+            from scipy.ndimage import generate_binary_structure, iterate_structure
+
+            struct = iterate_structure(generate_binary_structure(2, 2), knot_closing_radius)
+            closed = ndi.binary_closing(prop_knot, structure=struct)
+        else:
+            closed = prop_knot
+        lab, n_cc = ndi.label(closed, structure=np.ones((3, 3), dtype=np.uint8))
         knot_masks = [(lab == k) for k in range(1, n_cc + 1)]
     elif yolo_obb_model is not None:
         knot_masks = yolo_obb_sam_knots(yolo_obb_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
@@ -410,6 +418,7 @@ def write_export(
     pith_exclusion_px: float = 0.0,
     min_eccentricity: float = 0.0,
     min_solidity: float = 0.0,
+    knot_closing_radius: int = 0,
 ) -> List[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     project_meta = {
@@ -460,6 +469,7 @@ def write_export(
             pith_exclusion_px=pith_exclusion_px,
             min_eccentricity=min_eccentricity,
             min_solidity=min_solidity,
+            knot_closing_radius=knot_closing_radius,
         )
         meta["page"] = int(p)
         metas.append(meta)
@@ -560,6 +570,12 @@ def main() -> None:
         default=0.0,
         help="Drop knot CCs with regionprops solidity below this. Catches star/cross artifacts that pass eccentricity. Real knots ~0.94-0.97; default 0 = off.",
     )
+    parser.add_argument(
+        "--knot_closing_radius",
+        type=int,
+        default=0,
+        help="If >0 and knot_source=prop_cc: apply binary_closing(disk(radius)) to knot mask before CC labeling. Merges fragmented adjacent blobs into one CC.",
+    )
     parser.add_argument("--tau_flag", type=float, default=None, help="If unset, computed from data (mean+3σ).")
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--project_id", type=int, default=376641)
@@ -613,6 +629,7 @@ def main() -> None:
         pith_exclusion_px=args.pith_exclusion_px,
         min_eccentricity=args.min_eccentricity,
         min_solidity=args.min_solidity,
+        knot_closing_radius=args.knot_closing_radius,
     )
 
     n_yolo = sum(1 for m in metas if m["pith_source"] == "yolo")
