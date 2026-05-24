@@ -675,6 +675,16 @@ Status: superseded.
   trained on the 45 wood annotations.
 - Seed-every-N-frames experiment: does sparser OBB seeding (every 2-3 non-
   anchor frames) improve or hurt augmented propagation? Not tested.
+- **Hybrid seed strategy (TODO, experimental)**: route by OBB area —
+  - small/thin OBBs (< ~300 px area) → ellipse mask seed (matches knot
+    geometry, SAM2 doesn't need to refine).
+  - larger OBBs (≥ ~300 px) → SAM2 image-predictor with box + axis points +
+    OBB negatives (image content can guide shape refinement).
+  Could give the best of both: cleaner shapes on the easy small knots
+  (where v2.2 ellipse is slightly preferred on subset 4) and image-grounded
+  shapes on the larger knots (where v2.3 SAM seeds clearly win on hardwood
+  and recover more knots on softwood). Wire as a per-OBB switch in
+  `run_obb_augmented_points.py`.
 
 # How to continue
 
