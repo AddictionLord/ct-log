@@ -3,6 +3,58 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## auto_4_obb_augmented_propagation_v2_3 — dataset id 1139797
+**Date**: 2026-05-24. **Subset 4** with the point-seeded recipe (the same as
+subset 3's `auto_3_obb_aug_points_v1`).
+
+What changed vs v2.2:
+- Non-anchor seeds switched from ellipse mask_input to SAM2 image-predictor
+  output (box + 5 axis positives + 4 OBB negatives).
+
+Stats vs v2.2:
+
+| | v2.2 (ellipse) | v2.3 (SAM seeds) |
+|---|---|---|
+| kept knots | 177 | **207 (+17%)** |
+| frames w/ knots | 86 (29%) | **113 (39%)** (+31%) |
+
+Visual verdict (Mara): comparable, slight preference for v2.2 shapes —
+ellipse-seeded propagation produces marginally cleaner outputs on subset 4
+where SAM2's image features already work well. v2.3 finds more knots (+30)
+but with slightly less crisp shape quality.
+
+Tradeoff:
+- **Softwood (subset 4)**: v2.2 vs v2.3 is close; v2.2 marginally cleaner,
+  v2.3 has more recall.
+- **Hardwood (subset 3)**: v2.3 wins decisively (ellipses → ellipse-shaped
+  fallback output; SAM seeds → natural shapes).
+
+If picking one universal recipe: **v2.3 (point seeds)** is the safer choice
+because it works on both wood types. v2.2 (ellipse) is the per-log optimum
+for softwood.
+
+How to regenerate:
+```
+# 1. Point-seeded propagation
+CT_SUBSET=4 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_augmented_points \
+    --out_name result_subset4_obb_aug_points.npz
+
+# 2. Build + upload
+set -a && source .env && set +a
+CT_SUBSET=4 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_subset4_obb_aug_points.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 --pith_exclusion_px 25 --min_eccentricity 0.7 --min_solidity 0.85 --fill_holes \
+    --dataset_name auto_4_obb_augmented_propagation_v2_3 \
+    --out_dir /tmp/sm2025_subset4_obb_aug_points_v1 \
+    --upload
+```
+
+Status: shipped. v2.2 remains the per-log best for softwood; v2.3 is the
+universal recipe for mixed-species deployment.
+
+---
+
 ## auto_3_obb_aug_points_v1 — dataset id 1139796
 **Date**: 2026-05-24. **Knot strategy** (subset 3, hardwood): SAM2 image-
 predictor with **box + 5 axis positives + 4 OBB-derived negatives** seeded
