@@ -26,8 +26,8 @@ from ultralytics import YOLO
 
 from experiments.sm2025_subset4_propagate.run import CLASS_IDS, page_ann_path
 
-ORIG_NPZ = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out/result.npz"
-AUG_NPZ = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz"
+ORIG_NPZ = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz"
+AUG_NPZ = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out/result_obb_only.npz"
 YOLO_OBB_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt"
 SAM_CHECKPOINT = "/mnt/D/models/MedSAM2/MedSAM2_CTLesion.pt"
 SAM_MODEL_CFG = "/home/mary/code/ct-log/thirdparty/MedSAM2/sam2/configs/sam2.1_hiera_t512.yaml"
@@ -135,8 +135,8 @@ def main() -> None:
         fig, axes = plt.subplots(1, 4, figsize=(20, 5.4))
         gt_display = gt_mask if gt_mask is not None else np.zeros((h, w), dtype=bool)
         render_panel(axes[0], rgb, gt_display, "GT" + ("" if gt_mask is not None else " — no GT"))
-        render_panel(axes[1], rgb, orig_knot, "original propagation", gt_mask=gt_mask)
-        render_panel(axes[2], rgb, aug_knot, "OBB-aug propagation (ellipse seed)", gt_mask=gt_mask)
+        render_panel(axes[1], rgb, orig_knot, "OBB-aug (with anchors)", gt_mask=gt_mask)
+        render_panel(axes[2], rgb, aug_knot, "OBB-only (NO anchors)", gt_mask=gt_mask)
         render_panel(axes[3], rgb, v5_knot, "v5 (OBB+SAM2 image)", gt_mask=gt_mask)
         fig.suptitle("page %d  (conf=%.2f)" % (page, args.conf), fontsize=12)
         plt.tight_layout(rect=[0, 0, 1, 0.96])

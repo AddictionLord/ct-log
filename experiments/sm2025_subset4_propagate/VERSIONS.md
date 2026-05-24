@@ -3,6 +3,90 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
+## Naming convention
+
+We have two propagation pipelines. The dataset names on Supervisely are
+slightly misleading; here's what each actually means:
+
+- **OBB-augmented anchor propagation** = the trusted pipeline. Seeds MedSAM2
+  video predictor with **hand-annotated anchor GT** (Rostislav's 45 anchors
+  on subset 4), AND adds YOLO-OBB ellipse rasters at non-anchor frames as
+  *augmentation*. Anchors are the primary signal.
+  - Supervisely dataset names: `auto_4_obb_augmented_propagation_v*`.
+  - Use this when you have human anchors.
+
+- **OBB propagation** = the anchor-free deployment pipeline. Seeds MedSAM2
+  video predictor with **only YOLO-OBB ellipse rasters**, no human anchors.
+  Runs in fixed-size overlapping windows since there are no anchor segments
+  to delimit chunks. Knot-only (no wood/pith propagation since those have no
+  seed source).
+  - Supervisely dataset names: `auto_4_obb_only_v*` (legacy naming; should
+    have been `auto_4_obb_propagation_v*` but we kept the existing IDs).
+  - Use this on unseen logs without human anchors.
+
+Both pipelines share the same downstream filters in
+`build_combined_annotations.py` (size + pith + eccentricity + solidity +
+fill_holes) and the same YOLO pith model.
+
+---
+
+## auto_4_obb_only_v1 — dataset id 1139781
+**Date**: 2026-05-24. **Knot strategy**: anchor-free OBB propagation.
+
+This is the "no human annotation per log" path. Seeds MedSAM2 video
+predictor with YOLO-OBB ellipse rasters at every frame where YOLO fires
+(conf >= 0.40), processed in 30-frame windows with 5-frame overlap. No
+GT anchors used anywhere.
+
+Comparison vs `auto_4_obb_augmented_propagation_v2_2` (the anchor pipeline)
+on subset 4:
+
+| metric (all 292 frames) | value |
+|---|---|
+| mean pixel IoU | 0.67 |
+| mean pixel Dice | 0.69 |
+| instance precision | 0.74 |
+| instance recall | 0.87 |
+| instance F1 | 0.80 |
+
+By regime (vs anchor-aug as pseudo-GT):
+- Anchor frames (d=0, n=45): IoU 0.51 — Rostislav's hand masks are sharper
+  than the model, so disagreement is expected here.
+- Near (d≤5, n=228): IoU 0.69 — typical operating regime.
+- Far (d>5, n=19): IoU 0.79 — both pipelines lean on propagation memory,
+  so they agree most.
+
+Visual review (Mara): "very comparable" to the anchored version; anchors
+catch slightly more thin knots, but otherwise nearly indistinguishable.
+Pipeline is ready to test on unseen logs (subset 3).
+
+Stats: 176 knots / 84 frames (0.60/frame). 408 raw CCs (more than anchored
+because OBB-only triggers in more places); 77 dropped near pith (much more
+than the 10 in v2.2 — pith-blob misclassifications without anchor anchoring).
+
+How to regenerate:
+```
+# 1. Run anchor-free propagation (uses only YOLO-OBB):
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.run_obb_only
+
+# 2. Apply downstream filters + upload:
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_only.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 25 \
+    --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
+    --fill_holes \
+    --dataset_name auto_4_obb_only_v1 \
+    --out_dir /tmp/sm2025_subset4_obb_only_v1 \
+    --upload
+```
+
+Status: shipped. Ready for unseen-log evaluation.
+
+---
+
 ## auto_4_obb_augmented_propagation_v2_2 — dataset id 1139780
 **Date**: 2026-05-24. **Knot strategy**: v2.1 + binary_fill_holes per CC.
 
@@ -389,6 +473,7 @@ Status: superseded.
 | auto_4_obb_augmented_propagation_v2 | MedSAM2 video + filters (pith 40px, ecc 0.7) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v2_1 | MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
 | **auto_4_obb_augmented_propagation_v2_2** | **= v2.1 + binary_fill_holes per CC (cosmetic shape fix)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
+| **auto_4_obb_only_v1** | **anchor-free OBB propagation (no human anchors)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **threshold only (no anchor seeds for prop wood)** |
 
 # Key learnings (chronological)
 
