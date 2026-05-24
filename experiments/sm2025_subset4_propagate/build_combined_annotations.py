@@ -231,6 +231,7 @@ def build_annotation(
     min_eccentricity: float = 0.0,
     min_solidity: float = 0.0,
     knot_closing_radius: int = 0,
+    fill_holes: bool = False,
 ) -> Tuple[dict, Dict[str, object]]:
     """Returns (Supervisely-format ann dict, per-frame metadata for logging).
 
@@ -342,6 +343,8 @@ def build_annotation(
                 if min_solidity > 0.0 and props[0].solidity < min_solidity:
                     n_dropped_solidity += 1
                     continue
+        if fill_holes:
+            clipped = ndi.binary_fill_holes(clipped)
         obj = make_bitmap_object("Knot", clipped.astype(np.uint8))
         if obj is not None:
             objects.append(obj)
@@ -419,6 +422,7 @@ def write_export(
     min_eccentricity: float = 0.0,
     min_solidity: float = 0.0,
     knot_closing_radius: int = 0,
+    fill_holes: bool = False,
 ) -> List[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     project_meta = {
@@ -470,6 +474,7 @@ def write_export(
             min_eccentricity=min_eccentricity,
             min_solidity=min_solidity,
             knot_closing_radius=knot_closing_radius,
+            fill_holes=fill_holes,
         )
         meta["page"] = int(p)
         metas.append(meta)
@@ -576,6 +581,11 @@ def main() -> None:
         default=0,
         help="If >0 and knot_source=prop_cc: apply binary_closing(disk(radius)) to knot mask before CC labeling. Merges fragmented adjacent blobs into one CC.",
     )
+    parser.add_argument(
+        "--fill_holes",
+        action="store_true",
+        help="Apply binary_fill_holes per knot CC after all filters pass. Fills any interior background pixels enclosed by foreground.",
+    )
     parser.add_argument("--tau_flag", type=float, default=None, help="If unset, computed from data (mean+3σ).")
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--project_id", type=int, default=376641)
@@ -630,6 +640,7 @@ def main() -> None:
         min_eccentricity=args.min_eccentricity,
         min_solidity=args.min_solidity,
         knot_closing_radius=args.knot_closing_radius,
+        fill_holes=args.fill_holes,
     )
 
     n_yolo = sum(1 for m in metas if m["pith_source"] == "yolo")

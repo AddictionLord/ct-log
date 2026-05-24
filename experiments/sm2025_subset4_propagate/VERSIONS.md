@@ -3,33 +3,47 @@
 Each row = one Supervisely dataset under project 376641
 (`SM_2025_automatic_annotations`). Newest at top.
 
-## auto_4_obb_augmented_propagation_v2_2 — dataset id 1139779
-**Date**: 2026-05-24. **REGRESSION — DO NOT USE.** Knot strategy: v2.1 + binary_closing CC merge.
+## auto_4_obb_augmented_propagation_v2_2 — dataset id 1139780
+**Date**: 2026-05-24. **Knot strategy**: v2.1 + binary_fill_holes per CC.
 
-What I tried:
-- Added `--knot_closing_radius 3`. Applies `binary_closing(disk(3))` to the
-  knot mask before connected-component labeling, intended to merge adjacent
-  fragmented blobs.
+What changed vs v2.1:
+- Added `--fill_holes`. Applies `binary_fill_holes` to each knot CC after
+  all filters pass. Fills any interior background pixels enclosed by
+  foreground — addresses the "knot with weird interior hole" shape artifact
+  (e.g. page 236).
 
-Why it's a regression:
-- The "page 236 fragmented pair" that motivated this change turned out
-  **not to be fragmented at all**. It was already a single CC with a peanut
-  shape — the visual "two blobs" was a thin waist in one mask, not two CCs.
-- With radius=3, the closing **fused genuinely distinct radial knots** on
-  page 103 (two clean radial knots ~7 px apart near pith merged into one
-  V-shaped 1672 px CC with solidity 0.47, which the solidity filter then
-  killed → **lost 2 real knots**).
-- Net: a fix for a problem that didn't exist, that broke a different page.
+Why it's safe (despite earlier discussion):
+- Interior holes are by definition fully enclosed pixels. U/C-shaped objects
+  have an *open mouth*, no enclosed hole — `binary_fill_holes` doesn't touch
+  them. So the worry "we might close a real U/C shape" doesn't apply.
+- Operation is per-CC, so it can't fuse separate knots or change CC count.
+- Real knots are anatomically solid; filling holes is a strictly cosmetic
+  improvement.
 
-Stats: 176 knots / 88 frames (similar to v2.1) — but those are different
-knots; two from page 103 were lost to fusion, others gained by spurious
-fragmentation merge.
+Stats: 177 knots / 86 frames (identical to v2.1 — fill_holes changes mask
+shape but not which CCs pass filters).
 
-Status: superseded. Use v2.1 (dataset id 1139777) instead.
+History note: an earlier v2.2 (id 1139779) was a regression that used
+`--knot_closing_radius 3` and fused real adjacent knots on page 103. It has
+been **deleted from Supervisely** to avoid confusion. The current v2.2
+(id 1139780) is the fill-holes variant.
 
-Lesson: page 236's peanut-shape is a *shape* artifact inside one CC, not a
-fragmentation problem. The fix would be `binary_fill_holes` per CC (cosmetic,
-not yet implemented).
+How to regenerate:
+```
+conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
+    --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
+    --knot_source prop_cc \
+    --knot_min_px 150 \
+    --pith_exclusion_px 25 \
+    --min_eccentricity 0.7 \
+    --min_solidity 0.85 \
+    --fill_holes \
+    --dataset_name auto_4_obb_augmented_propagation_v2_2 \
+    --out_dir /tmp/sm2025_subset4_obb_aug_v2_2 \
+    --upload
+```
+
+Status: shipped. Current baseline.
 
 ---
 
@@ -373,8 +387,8 @@ Status: superseded.
 | auto_4_combined_v5 | YOLO-OBB+SAM2 (mask_input prior) | 0.40 | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v1 | MedSAM2 video, anchor GT + OBB ellipse seeds → CCs | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
 | auto_4_obb_augmented_propagation_v2 | MedSAM2 video + filters (pith 40px, ecc 0.7) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
-| **auto_4_obb_augmented_propagation_v2_1** | **MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
-| auto_4_obb_augmented_propagation_v2_2 | ⚠ REGRESSION: v2.1 + closing radius 3 (fuses real knots on page 103) | 0.40 | YOLO bbox (45-anchor model) | as v3 |
+| auto_4_obb_augmented_propagation_v2_1 | MedSAM2 video + tuned filters (pith 25px, ecc 0.7, solidity 0.85) | 0.40 (OBB conf for seeds) | YOLO bbox (45-anchor model) | as v3 |
+| **auto_4_obb_augmented_propagation_v2_2** | **= v2.1 + binary_fill_holes per CC (cosmetic shape fix)** | **0.40 (OBB conf for seeds)** | **YOLO bbox (45-anchor model)** | **as v3** |
 
 # Key learnings (chronological)
 
@@ -463,19 +477,15 @@ Status: superseded.
   trained on the 45 wood annotations.
 - Seed-every-N-frames experiment: does sparser OBB seeding (every 2-3 non-
   anchor frames) improve or hurt augmented propagation? Not tested.
-- Cosmetic: knots occasionally have interior holes (page 236). Could fix
-  with `binary_fill_holes` per CC before encoding. Doesn't affect counts,
-  just shape — defer until prioritised.
 
 # How to continue
 
 Pure pipeline runs:
 ```
-# Current best — OBB-augmented propagation v2.1 (tuned anatomical filters)
+# Current best — OBB-augmented propagation v2.2 (filters + fill_holes)
 # Requires result_obb_aug_ellipse.npz from run_obb_augmented.py first.
 # NOTE: do NOT set --knot_closing_radius >0 — it fuses real adjacent knots
-# (page 103 regression). The --knot_closing_radius flag is left in for
-# future experiments (e.g. fill_holes-based fixes).
+# (the earlier v2.2 regression). Use --fill_holes for shape cleanup instead.
 conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combined_annotations \
     --npz experiments/sm2025_subset4_propagate/out/result_obb_aug_ellipse.npz \
     --knot_source prop_cc \
@@ -483,6 +493,7 @@ conda run -n ct-log python -m experiments.sm2025_subset4_propagate.build_combine
     --pith_exclusion_px 25 \
     --min_eccentricity 0.7 \
     --min_solidity 0.85 \
+    --fill_holes \
     --dataset_name auto_4_obb_augmented_propagation_vN \
     --out_dir /tmp/sm2025_subset4_obb_aug_vN \
     --upload
