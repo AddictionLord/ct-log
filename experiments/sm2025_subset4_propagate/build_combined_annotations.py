@@ -226,15 +226,35 @@ def build_annotation(
     yolo_nms_iou: float,
     knot_min_px: int,
     tau_flag: float,
+    knot_source: str = "yolo_sam",
+    pith_exclusion_px: float = 0.0,
+    min_eccentricity: float = 0.0,
 ) -> Tuple[dict, Dict[str, object]]:
-    """Returns (Supervisely-format ann dict, per-frame metadata for logging)."""
+    """Returns (Supervisely-format ann dict, per-frame metadata for logging).
+
+    knot_source:
+        "yolo_sam"  — knots from YOLO(-OBB)+SAM2 image predictor (v3/v5 path).
+        "prop_cc"   — knots from connected components of pred_frame == KNOT.
+                      Use this when pred_frame already encodes good knots
+                      (e.g. OBB-augmented propagation output).
+
+    Filtering applied to each candidate knot CC, in order:
+        1. wood-intersect; drop if intersected area < knot_min_px.
+        2. drop if pith point lies inside the CC (knot wrapping pith).
+        3. drop if centroid distance to pith < pith_exclusion_px.
+        4. drop if regionprops eccentricity < min_eccentricity.
+    """
     h, w = img_gray.shape
     objects: List[dict] = []
 
     prop_wood = pred_frame == CLASS_IDS["Wood"]
+    prop_knot = pred_frame == CLASS_IDS["Knot"]
     prop_pith = pred_frame == CLASS_IDS["Pith"]
 
-    if yolo_obb_model is not None:
+    if knot_source == "prop_cc":
+        lab, n_cc = ndi.label(prop_knot, structure=np.ones((3, 3), dtype=np.uint8))
+        knot_masks = [(lab == k) for k in range(1, n_cc + 1)]
+    elif yolo_obb_model is not None:
         knot_masks = yolo_obb_sam_knots(yolo_obb_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
     else:
         knot_masks = yolo_sam_knots(yolo_model, sam_predictor, img_rgb, yolo_conf_knot, yolo_nms_iou)
@@ -249,20 +269,6 @@ def build_annotation(
     obj = make_bitmap_object("Wood", wood_final.astype(np.uint8))
     if obj is not None:
         objects.append(obj)
-
-    n_dropped_size = 0
-    n_dropped_outside = 0
-    for km in knot_masks:
-        clipped = km & wood_final
-        if clipped.sum() < knot_min_px:
-            if km.sum() < knot_min_px:
-                n_dropped_size += 1
-            else:
-                n_dropped_outside += 1
-            continue
-        obj = make_bitmap_object("Knot", clipped.astype(np.uint8))
-        if obj is not None:
-            objects.append(obj)
 
     yolo_xy = yolo_pith(yolo_model, img_rgb, conf=yolo_conf_pith)
     prop_xy: Optional[Tuple[float, float]] = None
@@ -292,6 +298,38 @@ def build_annotation(
         pith_source = "none"
         description = "[REVIEW: pith_missing]"
 
+    n_dropped_size = 0
+    n_dropped_outside = 0
+    n_dropped_pith = 0
+    n_dropped_eccentricity = 0
+    for km in knot_masks:
+        clipped = km & wood_final
+        if clipped.sum() < knot_min_px:
+            if km.sum() < knot_min_px:
+                n_dropped_size += 1
+            else:
+                n_dropped_outside += 1
+            continue
+        if final_pith is not None:
+            px, py = int(round(final_pith[0])), int(round(final_pith[1]))
+            inside_cc = 0 <= py < h and 0 <= px < w and bool(clipped[py, px])
+            ys, xs = np.nonzero(clipped)
+            cc_cx, cc_cy = float(xs.mean()), float(ys.mean())
+            dist_to_pith = float(np.hypot(cc_cx - final_pith[0], cc_cy - final_pith[1]))
+            if inside_cc or dist_to_pith < pith_exclusion_px:
+                n_dropped_pith += 1
+                continue
+        if min_eccentricity > 0.0:
+            from skimage import measure as _measure
+
+            props = _measure.regionprops(clipped.astype(np.uint8))
+            if props and props[0].eccentricity < min_eccentricity:
+                n_dropped_eccentricity += 1
+                continue
+        obj = make_bitmap_object("Knot", clipped.astype(np.uint8))
+        if obj is not None:
+            objects.append(obj)
+
     if final_pith is not None:
         objects.append(make_point_object("Pith", *final_pith))
 
@@ -307,9 +345,11 @@ def build_annotation(
         "pith_source": pith_source,
         "pith_disagreement_px": pith_disagreement_px,
         "n_knots_raw": len(knot_masks),
-        "n_knots_kept": len(knot_masks) - n_dropped_size - n_dropped_outside,
+        "n_knots_kept": len(knot_masks) - n_dropped_size - n_dropped_outside - n_dropped_pith - n_dropped_eccentricity,
         "n_dropped_size": n_dropped_size,
         "n_dropped_outside_wood": n_dropped_outside,
+        "n_dropped_pith": n_dropped_pith,
+        "n_dropped_eccentricity": n_dropped_eccentricity,
     }
     return ann, meta
 
@@ -352,6 +392,9 @@ def write_export(
     yolo_nms_iou: float,
     knot_min_px: int,
     tau_flag: float,
+    knot_source: str = "yolo_sam",
+    pith_exclusion_px: float = 0.0,
+    min_eccentricity: float = 0.0,
 ) -> List[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     project_meta = {
@@ -398,6 +441,9 @@ def write_export(
             yolo_nms_iou,
             knot_min_px,
             tau_flag,
+            knot_source=knot_source,
+            pith_exclusion_px=pith_exclusion_px,
+            min_eccentricity=min_eccentricity,
         )
         meta["page"] = int(p)
         metas.append(meta)
@@ -473,6 +519,25 @@ def main() -> None:
         default=50,
         help="Drop knot detections smaller than this after wood-intersect. Default 50.",
     )
+    parser.add_argument(
+        "--knot_source",
+        choices=["yolo_sam", "prop_cc"],
+        default="yolo_sam",
+        help="yolo_sam: knots from YOLO(-OBB)+SAM2 image predictor (v3/v5). "
+        "prop_cc: knots from connected components of pred==KNOT (use with OBB-augmented npz).",
+    )
+    parser.add_argument(
+        "--pith_exclusion_px",
+        type=float,
+        default=0.0,
+        help="Drop knot CCs whose centroid is within this distance of the pith point, or that contain the pith point. Default 0 = off.",
+    )
+    parser.add_argument(
+        "--min_eccentricity",
+        type=float,
+        default=0.0,
+        help="Drop knot CCs with regionprops eccentricity below this. Real knots are ~0.85-0.99; default 0 = off.",
+    )
     parser.add_argument("--tau_flag", type=float, default=None, help="If unset, computed from data (mean+3σ).")
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--project_id", type=int, default=376641)
@@ -522,6 +587,9 @@ def main() -> None:
         args.yolo_nms_iou,
         args.knot_min_px,
         tau_flag,
+        knot_source=args.knot_source,
+        pith_exclusion_px=args.pith_exclusion_px,
+        min_eccentricity=args.min_eccentricity,
     )
 
     n_yolo = sum(1 for m in metas if m["pith_source"] == "yolo")
@@ -534,19 +602,23 @@ def main() -> None:
     n_knots_kept = sum(int(m.get("n_knots_kept", 0)) for m in metas)
     n_dropped_size = sum(int(m.get("n_dropped_size", 0)) for m in metas)
     n_dropped_outside = sum(int(m.get("n_dropped_outside_wood", 0)) for m in metas)
+    n_dropped_pith = sum(int(m.get("n_dropped_pith", 0)) for m in metas)
+    n_dropped_eccentricity = sum(int(m.get("n_dropped_eccentricity", 0)) for m in metas)
     n_frames_with_knots = sum(1 for m in metas if int(m.get("n_knots_kept", 0)) > 0)
     print(
         "\npith summary: yolo=%d propagation=%d none=%d (flagged_disagreement=%d, τ=%.1f)"
         % (n_yolo, n_prop, n_none, n_disagree, tau_flag)
     )
     print(
-        "knot summary: kept %d/%d (dropped %d <%dpx, %d outside wood); %d/%d frames with knots (mean %.2f/frame)"
+        "knot summary: kept %d/%d (dropped %d <%dpx, %d outside wood, %d near pith, %d low eccentricity); %d/%d frames with knots (mean %.2f/frame)"
         % (
             n_knots_kept,
             n_knots_raw,
             n_dropped_size,
             args.knot_min_px,
             n_dropped_outside,
+            n_dropped_pith,
+            n_dropped_eccentricity,
             n_frames_with_knots,
             len(metas),
             n_knots_kept / max(1, len(metas)),
