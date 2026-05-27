@@ -25,6 +25,33 @@ def threshold_largest_cc(img: np.ndarray, thresh: int = 30) -> np.ndarray:
     return ndi.binary_fill_holes(mask).astype(np.uint8)
 
 
+def threshold_peel(
+    img: np.ndarray,
+    thresh: int = 30,
+    intensity_thresh: int = 60,
+    iterations: int = 5,
+) -> np.ndarray:
+    """Threshold + iterative boundary peeling of dark (bark) pixels.
+
+    Starts with threshold_largest_cc, then repeatedly removes boundary pixels
+    whose intensity is below intensity_thresh. Peels bark ring without
+    eroding bright wood interior.
+    """
+    mask = threshold_largest_cc(img, thresh=thresh).astype(bool)
+    for _ in range(iterations):
+        boundary = ndi.binary_dilation(~mask, iterations=1) & mask
+        dark_boundary = boundary & (img < intensity_thresh)
+        if dark_boundary.sum() == 0:
+            break
+        mask = mask & ~dark_boundary
+    labeled, n = ndi.label(mask.astype(np.uint8))
+    if n == 0:
+        return mask.astype(np.uint8)
+    sizes = ndi.sum(mask, labeled, range(1, n + 1))
+    largest = int(np.argmax(sizes)) + 1
+    return ndi.binary_fill_holes(labeled == largest).astype(np.uint8)
+
+
 def threshold_morphology(img: np.ndarray, thresh: int = 30, close_radius: int = 5) -> np.ndarray:
     """Threshold + largest CC + morphological closing to fill rim gaps + fill holes."""
     mask = threshold_largest_cc(img, thresh=thresh)

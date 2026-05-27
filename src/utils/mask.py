@@ -39,8 +39,7 @@ def mask_to_base64(mask: torch.Tensor) -> str:
     img_pil.putpalette([0, 0, 0, 255, 255, 255])
 
     bytes_io = io.BytesIO()
-    bytes_data = bytes_io.getvalue()
-
     img_pil.save(bytes_io, format="PNG", transparency=0, optimize=0)
+    bytes_data = bytes_io.getvalue()
 
     return base64.b64encode(zlib.compress(bytes_data)).decode("utf-8")
