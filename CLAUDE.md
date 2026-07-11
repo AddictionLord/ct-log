@@ -36,6 +36,32 @@ Option 1 (point seeds + 20 anchors) gives the best results on any wood type
 and is the recommended deployment path. Option 2 is the zero-effort fallback
 for softwood. Option 3 is the simplest code path but covers fewer frames.
 
+## Detector: single 2-class OBB (knot + pith)
+
+The recommended detector is one **2-class OBB model** (class 0 = knot, class 1 =
+pith), replacing the older split of a single-class OBB knot model plus a
+separate axis-aligned knot+pith model. Pith is emitted as a small square OBB
+around each pith point.
+
+Prep with `ann_pipeline/knot/data_prep_obb_2cls.py`, train `yolo11n-obb.pt`. On
+a log-level holdout (val = whole held-out logs, e.g. 2+10) it beats the
+two-model split on every metric:
+
+| | knot mAP50 | pith mAP50 | pith median px err |
+|---|---|---|---|
+| two models (OBB knot + axis-aligned pith) | 0.906 | 0.942 | 1.52 |
+| single 2-class OBB | 0.913 | 0.990 | 0.97 |
+
+Pith localizes at the annotation floor (median 0.97px, 87% within 2px). Knot
+AP degrades past IoU 0.75 (AP90≈0.06) because OBB boxes are fit to the knot
+mask — fine for propagation seeding, which needs the seed on the knot, not a
+pixel-tight trace. The old axis-aligned knot head was weak/unstable (0.35
+mAP50) and is dropped.
+
+**Retrain flow** (detectors read a local disk root, not Supervisely directly —
+see `ann_pipeline/PHASES.md`): download reviewed frames → `data_prep_obb_2cls`
+→ `knot/train`.
+
 ## Two-phase annotation workflow
 
 Two Supervisely projects split the workflow:

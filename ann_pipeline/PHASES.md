@@ -51,8 +51,69 @@ Recipe: OBB-augmented anchor propagation v2.2 (ellipse seeds).
 |---|---|---|
 | Phase1 | 377327 | Human anchors |
 | Phase2 | 377328 | Auto + human review |
+| Human-collection | 378193 | Accumulated `bumaska` (human-reviewed) frames from Phase2 |
 
 Datasets: `4` (subset 4, 292 frames, 45 anchors).
+
+## Human-collection: accumulating reviewed frames
+
+`Human-collection` (378193) mirrors Phase2's dataset layout but holds only the
+`bumaska`-tagged (human-reviewed) frames. It is the clean training pool.
+
+- **Initial build** (create-only, errors if it exists):
+  `python -m ann_pipeline.utils.build_human_collection`
+- **Incremental sync** (append-only; never touches/overwrites existing frames,
+  matches by image name, creates missing datasets, idempotent):
+  `python -m ann_pipeline.utils.update_human_collection [--dry-run]`
+
+## Retrain workflow (knot detectors)
+
+The knot data-prep scripts read a **local** project root
+(`/mnt/D/datasets/ct_log/375492_SM_2025/{subset}/{ann,img}/`), not Supervisely
+directly. New reviewed frames must first be pulled to disk:
+
+```bash
+set -a && source .env && set +a
+
+# 1. Pull bumaska frames from Phase2 to the local root (skips existing files;
+#    --overwrite to refresh a subset whose reviewed set grew, e.g. subset 4).
+python -m ann_pipeline.utils.download_all_tagged_images_from_supervisely \
+    --subsets 08 10
+
+# 2. Build datasets with a log-level holdout (whole logs -> val via
+#    --val_subsets; all others -> train). Both detectors share the split.
+python -m ann_pipeline.knot.data_prep_obb \
+    --subsets 1 2 3 4 08 10 --val_subsets 2 10 \
+    --out_dir ann_pipeline/out/knot_yolo_obb_v3
+python -m ann_pipeline.knot.data_prep \
+    --subsets 1 2 3 4 08 10 --val_subsets 2 10 \
+    --out_dir ann_pipeline/out/knot_yolo_v3
+
+# 3. Train (OBB needs an -obb pretrained model; task auto-detected).
+conda run -n ct-log python -m ann_pipeline.knot.train \
+    --data ann_pipeline/out/knot_yolo_obb_v3/knots_obb.yaml \
+    --model yolo11n-obb.pt --name yolo11n_obb_holdout_v3
+conda run -n ct-log python -m ann_pipeline.knot.train \
+    --data ann_pipeline/out/knot_yolo_v3/knots.yaml \
+    --model yolo11n.pt --name yolo11n_2cls_holdout_v3
+```
+
+**Recommended detector — single 2-class OBB (knot + pith):** one model replaces
+the OBB-knot + axis-aligned-pith split and beats it on every metric (see
+`CLAUDE.md`). Build with the 2-class OBB prep instead of the two preps above:
+
+```bash
+python -m ann_pipeline.knot.data_prep_obb_2cls \
+    --subsets 1 2 3 4 08 10 --val_subsets 2 10 \
+    --out_dir ann_pipeline/out/knot_yolo_obb_2cls_v3
+conda run -n ct-log python -m ann_pipeline.knot.train \
+    --data ann_pipeline/out/knot_yolo_obb_2cls_v3/knots_obb_2cls.yaml \
+    --model yolo11n-obb.pt --name yolo11n_obb_2cls_holdout_v3
+```
+
+Log-level holdout (val = held-out logs, e.g. 2 + 10) gives an honest
+generalization estimate to unseen logs, unlike the default per-frame random
+split where correlated slices from one log leak across train/val.
 
 ## Running
 

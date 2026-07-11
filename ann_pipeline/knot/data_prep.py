@@ -128,6 +128,12 @@ def main() -> None:
     parser.add_argument("--val_frac", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument(
+        "--val_subsets",
+        nargs="+",
+        default=None,
+        help="Log-level holdout: subset ids whose every slice goes to val; all others go entirely to train.",
+    )
+    parser.add_argument(
         "--pith_bbox_half",
         type=int,
         default=8,
@@ -172,6 +178,16 @@ def main() -> None:
             if dropped:
                 print(f"  subset {subset_id}: excluded {dropped} pages")
             ann_files = kept
+        if args.val_subsets is not None:
+            if subset_id in args.val_subsets:
+                for f in ann_files:
+                    val_items.append((subset_id, f))
+                print(f"  subset {subset_id}: {len(ann_files)} annotated slices (all val, holdout)")
+            else:
+                for f in ann_files:
+                    train_items.append((subset_id, f))
+                print(f"  subset {subset_id}: {len(ann_files)} annotated slices (all train)")
+            continue
         rng.shuffle(ann_files)
         n_val = max(1, int(len(ann_files) * args.val_frac)) if ann_files else 0
         for f in ann_files[:n_val]:
