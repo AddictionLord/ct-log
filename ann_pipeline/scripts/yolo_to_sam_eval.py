@@ -118,10 +118,19 @@ def main() -> None:
         gt_knot = knot_mask_from_ann(ann)
         gt_pith_boxes = pith_bboxes_from_ann(ann, half_size=args.pith_bbox_half)
 
-        # YOLO predictions
+        # YOLO predictions (supports both axis-aligned and OBB detectors; OBB
+        # oriented boxes are reduced to their axis-aligned enclosing bbox, which
+        # is what SAM2's box prompt expects).
         result = yolo.predict(img_path, conf=args.conf, verbose=False)[0]
-        pred_xyxy = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else np.empty((0, 4))
-        pred_cls = result.boxes.cls.cpu().numpy().astype(int) if result.boxes is not None else np.empty((0,), int)
+        if getattr(result, "obb", None) is not None and result.obb is not None and len(result.obb) > 0:
+            corners = result.obb.xyxyxyxy.cpu().numpy().reshape(-1, 4, 2)
+            xy_min = corners.min(axis=1)
+            xy_max = corners.max(axis=1)
+            pred_xyxy = np.concatenate([xy_min, xy_max], axis=1)
+            pred_cls = result.obb.cls.cpu().numpy().astype(int)
+        else:
+            pred_xyxy = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else np.empty((0, 4))
+            pred_cls = result.boxes.cls.cpu().numpy().astype(int) if result.boxes is not None else np.empty((0,), int)
         knot_bboxes = pred_xyxy[pred_cls == 0]
         pith_bboxes = pred_xyxy[pred_cls == 1]
 

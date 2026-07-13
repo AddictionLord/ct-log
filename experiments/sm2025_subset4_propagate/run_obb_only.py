@@ -38,7 +38,10 @@ from experiments.sm2025_subset4_propagate.run import (
 )
 
 OUT_DIR = "/home/mary/code/ct-log/experiments/sm2025_subset4_propagate/out"
-DEFAULT_YOLO_OBB_WEIGHTS = "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_v1/weights/best.pt"
+DEFAULT_YOLO_OBB_WEIGHTS = (
+    "/home/mary/code/ct-log/ann_pipeline/out/knot_runs/yolo11n_obb_2cls_holdout_v3/weights/best.pt"
+)
+KNOT_CLS = 0
 
 
 def load_rgb(path: str) -> np.ndarray:
@@ -56,7 +59,8 @@ def obb_ellipse_mask(yolo: YOLO, img_rgb: np.ndarray, h: int, w: int, conf: floa
     out = np.zeros((h, w), dtype=np.uint8)
     if res.obb is None or len(res.obb) == 0:
         return out
-    xyxyxyxy = res.obb.xyxyxyxy.cpu().numpy()
+    obb_cls = res.obb.cls.cpu().numpy().astype(int)
+    xyxyxyxy = res.obb.xyxyxyxy.cpu().numpy()[obb_cls == KNOT_CLS]
     for corners in xyxyxyxy:
         (cx, cy), (rw, rh), angle = cv2.minAreaRect(corners.astype(np.float32))
         cv2.ellipse(
