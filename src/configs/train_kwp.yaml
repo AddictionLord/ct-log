@@ -1,0 +1,38 @@
+# 2.5D knot/wood/pith DINOv3 segmentation.
+# Log-level holdout: train on log 4, validate on the unseen log 10.
+
+num_classes: 3  # wood, knot, pith (background is class 0, so 4 logits)
+lr: 0.0001
+num_epochs: 60
+resolution: [320, 320]
+backbone_weights: /mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /mnt/D/models/ct-log/kwp_seg_head.pth
+
+# window: 1 => [z-1, z, z+1] 2.5D (Option A); 0 => center replicated 3x (baseline)
+window: 1
+pith_radius: 3
+
+train_logs:
+  - /mnt/D/datasets/ct_log/378193_human_collection/4
+val_logs:
+  - /mnt/D/datasets/ct_log/378193_human_collection/10
+
+batch_size: 4
+num_workers: 4
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 5.0
+tversky_alpha: 0.3
+tversky_beta: 0.7
+ignore_background_in_tversky: true
+
+log_interval: 50
+
+use_local_logger: true
+local_log_dir: logs
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-2.5d
+mlflow_run_name: null
+mlflow_tracking_uri: http://localhost:5000

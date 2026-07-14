@@ -45,6 +45,9 @@ class MlflowLogger(ILogger):
             self._enabled = True
         except ImportError:
             pass
+        except Exception as error:  # noqa: BLE001
+            print("MLflow logging disabled (%s: %s)" % (type(error).__name__, error))
+            self._enabled = False
 
     def log_metrics(self, metrics: EpochMetrics) -> None:
         """Log metrics for a specific epoch and split.

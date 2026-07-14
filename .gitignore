@@ -190,4 +190,30 @@ _ccds
 *_local.yaml
 
 .vscode
+
+# Experiment / pipeline outputs (regenerable)
+out/
+**/out/
+
+# Vendored deps' build artifacts and checkpoints
+thirdparty/*/checkpoints/
+thirdparty/*/build/
+thirdparty/*/_C.so
+thirdparty/*/data/
+
+# Hugin sub-package (mentioned but not used in main pipeline)
 */hugin/*
+*/hugin/*
+
+# Image artifacts
+*.png
+*.jpg
+*.jpeg
+
+# Claude Code session archive (kept locally, synced via .claude-history/sync.sh)
+.claude-history/
+
+# Model weights and run artifacts (large, regenerable/downloadable)
+*.pt
+/models/
+/logs/

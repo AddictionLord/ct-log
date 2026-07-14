@@ -1,6 +1,6 @@
 [build-system]
-requires = ["flit_core >=3.2,<4"]
-build-backend = "flit_core.buildapi"
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "ct_log"
@@ -17,16 +17,20 @@ classifiers = [
 ]
 requires-python = "~=3.11.0"
 
+[tool.setuptools.packages.find]
+where = [".", "thirdparty/MedSAM2", "thirdparty/dinov3"]
+include = ["src*", "sam2*", "efficient_track_anything*", "training*", "dinov3*"]
+exclude = ["tests*", "notebooks*", "experiments*"]
 
 [tool.ruff]
 line-length = 120
-src = ["ct_log"]
-include = ["pyproject.toml", "ct_log/**/*.py"]
+src = ["src", "experiments"]
+include = ["pyproject.toml", "src/**/*.py", "experiments/**/*.py", "scripts/**/*.py"]
 
 [tool.ruff.lint]
-extend-select = ["I"]  # Add import sorting
+extend-select = ["I"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["src"]
+known-first-party = ["ct_log"]
+known-third-party = ["sam2", "dinov3", "efficient_track_anything"]
 force-sort-within-sections = true
-
