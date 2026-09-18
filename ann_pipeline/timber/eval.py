@@ -21,11 +21,20 @@ from ann_pipeline.timber.data import (
     find_annotated_slices,
     load_slice,
 )
-from ann_pipeline.timber.detectors import threshold_components, threshold_components_split
+from ann_pipeline.timber.detectors import (
+    threshold_components,
+    threshold_components_split,
+    threshold_components_watershed,
+    threshold_components_full,
+    threshold_components_v2,
+)
 
 DETECTORS = {
     "threshold_components": threshold_components,
     "threshold_components_split": threshold_components_split,
+    "threshold_components_watershed": threshold_components_watershed,
+    "threshold_components_full": threshold_components_full,
+    "threshold_components_v2": threshold_components_v2,
 }
 
 

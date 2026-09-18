@@ -37,8 +37,26 @@ Without them precision is 0.90 and exact-8 accuracy 6%.
 
 | detector | exact-8 | mean inst IoU | precision | recall | F1 | semantic IoU |
 |---|---|---|---|---|---|---|
-| `threshold_components_split` | **0.969** | 0.959 | 1.000 | 0.996 | **0.998** | 0.955 |
+| **`threshold_components_v2`** (recommended) | **1.000** | 0.958 | **1.000** | **1.000** | **1.000** | 0.958 |
+| `threshold_components_split` | 0.969 | 0.959 | 1.000 | 0.996 | 0.998 | 0.955 |
+| `threshold_components_full` | 0.969 | 0.959 | 1.000 | 0.996 | 0.998 | 0.955 |
+| `threshold_components_watershed` | 0.938 | 0.955 | 0.992 | 0.996 | 0.994 | 0.946 |
 | `threshold_components` | 0.938 | 0.956 | 1.000 | 0.988 | 0.994 | 0.944 |
+
+### Why v2 drops the aspect gate
+
+`033.png` was failing not because two boards merged, but because board `141`
+kept a sliver of the top plank after the opening, pushing its aspect to 3.62 —
+just past the 3.5 cutoff. Measured post-opening over all 32 frames:
+
+| gate | true boards | plank fragments | separates? |
+|---|---|---|---|
+| aspect | max **3.62** | min **3.29** | no, overlapping |
+| long side | max **211.8** | min **245.8** | yes, 34px margin |
+
+So v2 gates on long side alone (`max_long_side=228`, mid-gap) and keeps the
+watershed as a fallback for genuinely oversized blobs. Result: all 256
+instances found across all 32 frames, no false positives.
 
 Boards are air-separated, so intensity threshold + connected components solves
 this; no SAM, no detector training needed. The `_split` variant adds a
@@ -76,3 +94,28 @@ Result: **148/150 frames yield exactly 8 instances.** Two flagged:
   A data artifact near the end of the scan, not a detector flaw. A
   per-frame adaptive threshold (Otsu, or a percentile of nonzero intensity)
   would handle it if such frames need covering.
+
+
+## ID propagation
+
+Annotated frames carry numeric ids that are persistent board identities. The
+boards move sub-pixel between adjacent slices, so ids transfer by overlap:
+
+```bash
+python -m ann_pipeline.timber.track          # tracks.csv
+python -m ann_pipeline.timber.render_tracks  # per-frame PNGs with ids drawn
+```
+
+`track.py` seeds ids at each of the 32 annotated frames, then walks outward,
+matching detections to the previous frame by Hungarian assignment on IoU, with
+a centroid-distance fallback (< 40px) for the rare non-overlapping case.
+
+Validation:
+
+- **id agreement with GT on annotated frames: 256/256 (100%)**
+- **149/150 frames carry all 8 ids** (only `182.png`, the underexposed frame,
+  falls short at 5 — a detection limit, not a tracking one)
+- per-id centroid drift between consecutive frames: median 0.13-0.32px,
+  p95 < 0.8px, no id swaps
+
+Because drift is sub-pixel, no SAM or optical-flow tracker is needed here.

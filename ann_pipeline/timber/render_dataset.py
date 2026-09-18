@@ -22,7 +22,7 @@ from ann_pipeline.timber.data import (
     load_gray,
     timber_instances_from_ann,
 )
-from ann_pipeline.timber.detectors import threshold_components_split
+from ann_pipeline.timber.detectors import threshold_components_v2
 from ann_pipeline.timber.eval import iou, match_instances
 
 GT_COLOR = (255, 140, 0)
@@ -73,7 +73,7 @@ def main() -> None:
             with open(ann_path) as fh:
                 ann = json.load(fh)
             gt_masks = [ann["objects"] and m for m in timber_instances_from_ann(ann).values()]
-        pred_masks = threshold_components_split(gray)
+        pred_masks = threshold_components_v2(gray)
 
         annotated = len(gt_masks) > 0
         mean_iou = float("nan")

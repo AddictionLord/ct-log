@@ -11,6 +11,7 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 from scipy import ndimage as ndi
+from skimage.segmentation import watershed
 
 
 def component_shape(mask: np.ndarray) -> Tuple[float, float]:
@@ -82,3 +83,155 @@ def threshold_components_split(
         max_aspect=max_aspect,
         open_radius=open_radius,
     )
+
+
+def split_blob_watershed(mask: np.ndarray, seed_frac: float = 0.5) -> List[np.ndarray]:
+    """Split a blob of touching boards via watershed on its distance transform.
+
+    Boards are convex and meet at a thin neck, so the distance transform has one
+    peak per board. Seeds are the connected components of dist > seed_frac*max.
+    Returns [mask] unchanged when only one seed is found.
+    """
+    dist = ndi.distance_transform_edt(mask)
+    if dist.max() <= 0:
+        return [mask]
+    seeds, n_seeds = ndi.label(dist > seed_frac * dist.max())
+    if n_seeds <= 1:
+        return [mask]
+    labels = watershed(-dist, seeds, mask=mask)
+    return [labels == i for i in range(1, n_seeds + 1) if (labels == i).any()]
+
+
+def threshold_components_watershed(
+    img: np.ndarray,
+    thresh: int = 30,
+    min_px: int = 3000,
+    max_px: int = 12000,
+    max_long_side: float = 220.0,
+    max_aspect: float = 3.5,
+    seed_frac: float = 0.5,
+) -> List[np.ndarray]:
+    """Threshold + components, watershed-splitting blobs too large to be one board.
+
+    Recovers boards that thresholding fused to a neighbour (or to the top plank),
+    which the plain shape gate would discard wholesale.
+    """
+    binary = ndi.binary_fill_holes((img > thresh).astype(np.uint8))
+    labeled, count = ndi.label(binary)
+    if count == 0:
+        return []
+    candidates = []
+    for label_id in range(1, count + 1):
+        mask = labeled == label_id
+        area = int(mask.sum())
+        if area < min_px:
+            continue
+        if area > max_px:
+            candidates.extend(split_blob_watershed(mask, seed_frac=seed_frac))
+        else:
+            candidates.append(mask)
+    out = []
+    for mask in candidates:
+        area = int(mask.sum())
+        if not min_px <= area <= max_px:
+            continue
+        long_side, aspect = component_shape(mask)
+        if long_side > max_long_side or aspect > max_aspect:
+            continue
+        out.append(mask)
+    out.sort(key=lambda m: int(m.sum()), reverse=True)
+    return out
+
+
+def threshold_components_full(
+    img: np.ndarray,
+    thresh: int = 30,
+    min_px: int = 3000,
+    max_px: int = 12000,
+    max_long_side: float = 220.0,
+    max_aspect: float = 3.5,
+    open_radius: int = 3,
+    seed_frac: float = 0.5,
+) -> List[np.ndarray]:
+    """Opening to sever thin bridges, then watershed on any blob still oversized.
+
+    The opening handles boards joined by a narrow neck; the watershed handles
+    the wider fusions it cannot cut. Shape gates are applied last, so a board
+    rescued from a merge is judged on its own dimensions.
+    """
+    binary = (img > thresh).astype(np.uint8)
+    if open_radius > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_radius * 2 + 1,) * 2)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    binary = ndi.binary_fill_holes(binary)
+    labeled, count = ndi.label(binary)
+    if count == 0:
+        return []
+    candidates = []
+    for label_id in range(1, count + 1):
+        mask = labeled == label_id
+        area = int(mask.sum())
+        if area < min_px:
+            continue
+        if area > max_px:
+            candidates.extend(split_blob_watershed(mask, seed_frac=seed_frac))
+        else:
+            candidates.append(mask)
+    out = []
+    for mask in candidates:
+        area = int(mask.sum())
+        if not min_px <= area <= max_px:
+            continue
+        long_side, aspect = component_shape(mask)
+        if long_side > max_long_side or aspect > max_aspect:
+            continue
+        out.append(mask)
+    out.sort(key=lambda m: int(m.sum()), reverse=True)
+    return out
+
+
+def threshold_components_v2(
+    img: np.ndarray,
+    thresh: int = 30,
+    min_px: int = 3000,
+    max_px: int = 12000,
+    max_long_side: float = 228.0,
+    open_radius: int = 3,
+    seed_frac: float = 0.5,
+) -> List[np.ndarray]:
+    """Recommended detector: opening + watershed, gated on long side only.
+
+    After the opening, aspect ratio no longer separates boards from the top
+    plank (true boards reach 3.62, plank fragments start at 3.29), but the
+    min-area-rect long side does, with a clean margin: true boards top out at
+    211.8px, plank fragments start at 245.8px. Gating on aspect as well costs a
+    real board on frame 033, whose retained sliver of plank inflates its aspect.
+    """
+    binary = (img > thresh).astype(np.uint8)
+    if open_radius > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_radius * 2 + 1,) * 2)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    binary = ndi.binary_fill_holes(binary)
+    labeled, count = ndi.label(binary)
+    if count == 0:
+        return []
+    candidates = []
+    for label_id in range(1, count + 1):
+        mask = labeled == label_id
+        area = int(mask.sum())
+        if area < min_px:
+            continue
+        if area > max_px:
+            candidates.extend(split_blob_watershed(mask, seed_frac=seed_frac))
+        else:
+            candidates.append(mask)
+    out = []
+    for mask in candidates:
+        area = int(mask.sum())
+        if not min_px <= area <= max_px:
+            continue
+        if component_shape(mask)[0] > max_long_side:
+            continue
+        out.append(mask)
+    out.sort(key=lambda m: int(m.sum()), reverse=True)
+    return out
