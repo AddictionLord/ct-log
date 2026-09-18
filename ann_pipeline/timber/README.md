@@ -56,3 +56,23 @@ python -m ann_pipeline.timber.visualize --frames 033.png 091.png 110.png
 ```
 
 Outputs `per_frame.csv` + `summary.csv` under `ann_pipeline/out/timber_eval/`.
+
+## Full-dataset visual inspection
+
+```bash
+python -m ann_pipeline.timber.render_dataset
+```
+
+Writes one PNG per frame (all 150) to `ann_pipeline/out/timber_vis/`, plus
+`index.csv`. GT is an orange fill (annotated frames only), predictions are cyan
+outlines. Frames where `n_pred != 8` are prefixed `FLAG_` so they sort first.
+
+Result: **148/150 frames yield exactly 8 instances.** Two flagged:
+
+- `033.png` (annotated) — one board touches the top plank, merged blob is
+  shape-rejected, 7 found.
+- `182.png` (unannotated) — **underexposed scan**: max intensity 146 vs the
+  usual 250, mean 7.0. Three boards fall below the t=30 threshold, 5 found.
+  A data artifact near the end of the scan, not a detector flaw. A
+  per-frame adaptive threshold (Otsu, or a percentile of nonzero intensity)
+  would handle it if such frames need covering.

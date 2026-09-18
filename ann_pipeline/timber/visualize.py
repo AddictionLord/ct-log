@@ -1,8 +1,9 @@
 """Render timber GT and predictions as plotly figures."""
 
 import argparse
+import pathlib
 from os.path import join
-from typing import Dict, List
+from typing import List
 
 import numpy as np
 import plotly.express as px
@@ -44,6 +45,11 @@ def main() -> None:
     parser.add_argument("--project_root", default=DEFAULT_PROJECT_ROOT)
     parser.add_argument("--subset", default=DEFAULT_SUBSET)
     parser.add_argument("--frames", nargs="+", default=None, help="image names, e.g. 033.png")
+    parser.add_argument(
+        "--out_html",
+        default="/home/mary/code/ct-log/ann_pipeline/out/timber_eval",
+        help="directory for self-contained HTML figures; empty string opens a browser instead",
+    )
     args = parser.parse_args()
 
     subset_dir = join(args.project_root, args.subset)
@@ -57,14 +63,27 @@ def main() -> None:
         msg = "no matching annotated frames"
         raise ValueError(msg)
 
+    out_dir = pathlib.Path(args.out_html) if args.out_html else None
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
     for ann_fname in targets:
         gray, instances = load_slice(subset_dir, ann_fname)
         gt_masks = [instances[k] for k in sorted(instances)]
         pred_masks = threshold_components_split(gray)
         name = ann_fname[: -len(".json")]
-        px.imshow(gray, color_continuous_scale="gray", title=f"{name} - source").show()
-        px.imshow(colorize(gray, gt_masks), title=f"{name} - GT ({len(gt_masks)} instances)").show()
-        px.imshow(colorize(gray, pred_masks), title=f"{name} - pred ({len(pred_masks)} instances)").show()
+        figures = [
+            ("source", px.imshow(gray, color_continuous_scale="gray", title=f"{name} - source")),
+            ("gt", px.imshow(colorize(gray, gt_masks), title=f"{name} - GT ({len(gt_masks)} instances)")),
+            ("pred", px.imshow(colorize(gray, pred_masks), title=f"{name} - pred ({len(pred_masks)} instances)")),
+        ]
+        for kind, fig in figures:
+            if out_dir is None:
+                fig.show()
+                continue
+            path = out_dir / f"{name.replace('.png', '')}_{kind}.html"
+            fig.write_html(str(path), include_plotlyjs="cdn")
+            print(path)
 
 
 if __name__ == "__main__":
