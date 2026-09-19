@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import torch
 import torchvision
@@ -11,6 +12,21 @@ from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import create_dinov3_segmentor
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
+
+
+def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int) -> torch.Tensor:
+    """Extract and concatenate patch features from the last n_layers backbone blocks.
+
+    Args:
+        model: Frozen DINOv3 backbone.
+        images: [B, 3, H, W] normalized input.
+        n_layers: Number of intermediate layers to concatenate.
+
+    Returns:
+        torch.Tensor: [B, num_patches, 1024 * n_layers] concatenated features.
+    """
+    layers = model.get_intermediate_layers(images, n=n_layers, return_class_token=False)
+    return torch.cat(layers, dim=-1)
 
 
 def make_transform() -> torchvision.transforms.Normalize:
@@ -106,7 +122,7 @@ def evaluate(
         images = transform(batch["image"].to(device))
         masks = batch["mask"].to(device)
 
-        features = model.get_intermediate_layers(images, n=1, return_class_token=False)[0]
+        features = extract_features(model, images, config.n_layers)
         outputs = seg_head(features)
 
         losses.append(compute_loss(outputs, masks, config).item())
@@ -121,6 +137,12 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="src/configs/train_kwp.yaml")
     parser.add_argument("--window", type=int, default=None, help="Override window (0=baseline, 1=2.5D).")
     parser.add_argument("--run_name", type=str, default=None, help="Override MLflow run name.")
+    parser.add_argument("--n_layers", type=int, default=None, help="Override number of backbone layers fused.")
+    parser.add_argument("--num_epochs", type=int, default=None, help="Override number of epochs.")
+    parser.add_argument("--checkpoint_path", type=str, default=None, help="Override checkpoint path.")
+    parser.add_argument("--local_log_dir", type=str, default=None, help="Override local log directory.")
+    parser.add_argument("--train_logs", type=str, nargs="+", default=None, help="Override training log dirs.")
+    parser.add_argument("--val_logs", type=str, nargs="+", default=None, help="Override validation log dirs.")
     args = parser.parse_args()
 
     config = KwpTrainingConfig.from_yaml(args.config)
@@ -128,6 +150,18 @@ def main() -> None:
         config.window = args.window
     if args.run_name is not None:
         config.mlflow_run_name = args.run_name
+    if args.n_layers is not None:
+        config.n_layers = args.n_layers
+    if args.num_epochs is not None:
+        config.num_epochs = args.num_epochs
+    if args.checkpoint_path is not None:
+        config.checkpoint_path = Path(args.checkpoint_path)
+    if args.local_log_dir is not None:
+        config.local_log_dir = Path(args.local_log_dir)
+    if args.train_logs is not None:
+        config.train_logs = args.train_logs
+    if args.val_logs is not None:
+        config.val_logs = args.val_logs
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -153,6 +187,7 @@ def main() -> None:
         backbone_weights=config.backbone_weights,
         num_classes=config.num_classes + 1,
         input_size=config.resolution[0],
+        n_layers=config.n_layers,
     )
     model = model.to(device)
     seg_head = seg_head.to(device)
@@ -173,7 +208,7 @@ def main() -> None:
             masks = batch["mask"].to(device)
 
             with torch.no_grad():
-                features = model.get_intermediate_layers(images, n=1, return_class_token=False)[0]
+                features = extract_features(model, images, config.n_layers)
 
             outputs = seg_head(features)
             loss = compute_loss(outputs, masks, config)

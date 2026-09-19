@@ -86,12 +86,15 @@ class MlflowLogger(ILogger):
         if not self._enabled:
             return
 
-        if isinstance(model, torch.nn.Module):
-            self._mlflow.pytorch.log_model(model, name)
-        elif isinstance(model, dict):
-            self._mlflow.pytorch.log_state_dict(model, name)
-        else:
-            self._mlflow.log_artifact(model, name)
+        try:
+            if isinstance(model, torch.nn.Module):
+                self._mlflow.pytorch.log_model(model, name)
+            elif isinstance(model, dict):
+                self._mlflow.pytorch.log_state_dict(model, name)
+            else:
+                self._mlflow.log_artifact(model, name)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow model logging skipped (%s: %s)" % (type(error).__name__, error))
 
     def end(self) -> None:
         """Finalize the logging session and cleanup resources."""

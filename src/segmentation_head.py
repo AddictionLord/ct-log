@@ -47,9 +47,7 @@ class SimpleSegmentationHead(nn.Module):
         batch_size, num_patches, feature_dim = patch_features.shape
 
         # Reshape to spatial feature map
-        spatial_features = patch_features.view(
-            batch_size, self.feature_map_size, self.feature_map_size, feature_dim
-        )
+        spatial_features = patch_features.view(batch_size, self.feature_map_size, self.feature_map_size, feature_dim)
         spatial_features = spatial_features.permute(0, 3, 1, 2)  # [B, C, H, W]
 
         # Decode to full resolution
@@ -59,13 +57,15 @@ class SimpleSegmentationHead(nn.Module):
 
 
 def create_dinov3_segmentor(
-    backbone_weights: str, num_classes: int = 150, input_size: int = 224
+    backbone_weights: str, num_classes: int = 150, input_size: int = 224, n_layers: int = 1
 ) -> Tuple[nn.Module, nn.Module]:
     """Create DINOv3 backbone + segmentation head.
 
     Args:
         backbone_weights: Path to DINOv3 backbone weights
         num_classes: Number of segmentation classes
+        input_size: Input image size
+        n_layers: Number of intermediate backbone layers concatenated as head input
 
     Returns:
         Tuple of (backbone, segmentation_head)
@@ -87,7 +87,7 @@ def create_dinov3_segmentor(
 
     # Create segmentation head
     segmentation_head = SimpleSegmentationHead(
-        feature_dim=1024,  # ViT-L feature dimension
+        feature_dim=1024 * n_layers,  # ViT-L feature dimension per layer
         num_classes=num_classes,
         input_size=input_size,
     )

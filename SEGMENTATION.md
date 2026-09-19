@@ -69,6 +69,50 @@ Then run baseline vs. Option A under identical config; track in MLflow under
 experiment `ct-log` with distinct run names. Compare per-class IoU on defect
 classes (knot, crack, pith), not just macro mean.
 
+## Results: A vs. baseline (2026-09-19)
+
+Both arms ran 30 epochs, identical config, **only `window` differs**. 3-class
+knot/wood/pith on full logs; log-level holdout (train = log 4, val = log 10).
+MLflow experiment `ct-log-kwp-2.5d`.
+
+At each arm's best epoch by `mean_iou_fg`:
+
+| | epoch | wood | knot | pith | **fg mean IoU** |
+|---|---|---|---|---|---|
+| baseline (`window=0`, slice replicated 3×) | 23 | 0.939 | 0.269 | 0.040 | **0.4158** |
+| Option A (`window=1`, `[z−1, z, z+1]`) | 28 | 0.941 | 0.266 | 0.035 | **0.4139** |
+| delta | | +0.002 | −0.003 | −0.005 | **−0.0019** |
+
+Best-across-all-epochs per class: knot 0.287 (baseline) vs 0.269 (A); pith
+0.040 (baseline) vs 0.035 (A). Mean fg over the last 5 epochs: 0.4074
+(baseline) vs 0.4078 (A).
+
+**Verdict: null result.** Channel-stacked 2.5D gives no measurable gain. The
+−0.0019 gap is far inside epoch-to-epoch noise (fg swings ~0.02 between
+adjacent epochs in both arms), so the two arms are statistically
+indistinguishable — this is "no effect", not "A is worse".
+
+One real difference: **pith activates much earlier under A** (nonzero from
+epoch 7, vs ~epoch 23 for the baseline), even though it converges to the same
+place. Weak evidence that axial context helps the sparsest class learn faster,
+but it does not improve the final result.
+
+Caveats before over-reading this:
+- Only **one training log** (log 4) and one val log (log 10) — a single
+  holdout pair, so generalization estimates are noisy.
+- Extreme class imbalance (knot ~0.09%, pith ~0.01% of pixels) — pith IoU is
+  near the floor in both arms and may be dominated by annotation granularity,
+  not model capacity.
+- The frozen ViT-L probe with a single-layer feature + scratch decoder may
+  simply be the bottleneck, masking any input-side gain.
+
+**Implication for sequencing:** the cheap win did not materialize, so the
+"A → B → C" ladder's premise (that axial context is worth exploiting) is not
+yet supported. Before investing in Option B, it is probably worth attacking
+the bottleneck instead — multi-layer features, a stronger head, or unfreezing
+part of the backbone — and getting more annotated logs so the holdout is not a
+single pair.
+
 ## Later options (decide after A vs. baseline)
 
 - **Option B — mid-fusion of per-slice features**: run frozen DINOv3 on N
