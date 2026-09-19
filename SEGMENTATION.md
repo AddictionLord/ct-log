@@ -158,7 +158,8 @@ with **log 10 still held out** — so every number stays comparable.
 | baseline (n=1, 1 log, w=0) | 0.4160 | 0.4074 | 0.269 | 0.040 | 0.287 | 0.040 |
 | 2.5D (n=1, 1 log, w=1) | 0.4140 | 0.4078 | 0.266 | 0.035 | 0.269 | 0.035 |
 | n=4 (1 log, w=0) | 0.4230 | 0.4186 | 0.297 | 0.025 | 0.298 | 0.041 |
-| **n=4 (2 logs, w=0)** | **0.4450** | **0.4382** | **0.342** | 0.039 | **0.346** | 0.050 |
+| **n=4 (2 logs, w=0)** | **0.4450** | 0.4382 | **0.342** | 0.039 | **0.346** | 0.050 |
+| n=4 (2 logs, w=1) 2.5D | 0.4410 | 0.4384 | 0.328 | 0.043 | 0.328 | **0.059** |
 
 **Data is the dominant lever.** Doubling the training logs adds **+0.020**
 last-5 mean on top of the multi-layer head (0.4186 → 0.4382) — roughly twice
@@ -180,17 +181,76 @@ ValLoss rose briefly around epoch 24 (0.2547 → 0.2679) while TrainLoss kept
 falling, but it recovered to 0.2581 by epoch 27, so this was a blip rather
 than sustained overfitting at 30 epochs.
 
-## Later options (decide after A vs. baseline)
+### 2.5D retest: the null is robust
+
+The last row is the clean 2.5D test — **same head (n=4), same data (2 logs),
+same val log, only `window` differs**. Paired over all 30 matched epochs:
+
+```
+mean diff  -0.0003      stdev 0.0102      2.5D wins 13/30 epochs
+```
+
+Last-5 means are 0.4384 (2.5D) vs 0.4382 (2D) — identical to three decimals.
+The per-epoch difference is a coin flip whose spread (±0.010) is an order of
+magnitude larger than its mean. **2.5D has now returned a null in two
+independent settings** (single-log n=1, and two-log n=4), so the original
+result was not a masking effect: axial context via channel-stacking simply
+does not help this task.
+
+The one reproducible 2.5D effect is on **pith**, the sparsest class: it
+reaches nonzero IoU around epoch 7 under `window=1` versus ~epoch 23 under
+`window=0`, and its max pith is the highest of any run (0.059). Axial context
+reliably makes the rarest class *learn faster* and tolerate a slightly higher
+ceiling, but this does not survive into the foreground mean.
+
+## Conclusion: what actually moves the needle
+
+Ranked by last-5 mean fg IoU gain over the original baseline (0.4074):
+
+| lever | gain | cost |
+|---|---|---|
+| **more training data** (1 → 2 logs) | **+0.020** | annotation effort |
+| multi-layer features (n=1 → 4) | +0.011 | 11M → 36M head params |
+| 2.5D axial context (w=0 → 1) | **±0.000** | 3 slice loads per sample |
+
+Combined, head + data take fg **0.4074 → 0.4382** and knot **0.287 → 0.346**.
+
+**Data is the dominant lever and should be the default next investment.** The
+gain from one extra log exceeded the gain from quadrupling feature depth, and
+it was the only change that made knot and pith strong *simultaneously* rather
+than trading off.
+
+### Next steps
+
+1. **Pull more reviewed logs.** Human-collection log 1 only became fully
+   reviewed between July and September; check for newly completed logs (2, 08
+   and 3 were partial) and retrain. This is the highest-expected-value move.
+2. **Revisit schedule/augmentation** now that the data is larger — 30 epochs
+   was still improving at the end of the two-log runs, so the budget may be
+   short, and augmentation is untested.
+3. **Do not pursue Option B (feature mid-fusion) or Option C (true 3D) on the
+   axial-context rationale.** Two independent nulls say channel-level axial
+   context buys nothing here; a more elaborate fusion scheme would need a
+   different justification than "CT is volumetric".
+
+## Later options — superseded
+
+The original plan was a ladder: **A** (channel-stacked 2.5D) → **B**
+(mid-fusion of per-slice features) → **C** (true 3D), on the premise that
+axial context is worth exploiting because CT is volumetric.
+
+**That premise did not survive the experiments.** A returned a null twice, in
+two independent settings. B and C are more elaborate ways of feeding the model
+the same axial information that A showed it cannot use here, so the ladder's
+rationale is gone. They are kept below only for reference:
 
 - **Option B — mid-fusion of per-slice features**: run frozen DINOv3 on N
   slices, fuse patch features (axial attention / 3D conv) before the decoder.
-  Keeps backbone frozen; cache features to disk to amortize N× forward passes.
-  Larger axial receptive field than channel-stacking. Moderate effort.
+  Larger axial receptive field than channel-stacking. Would need a new
+  justification, not the volumetric-prior argument.
 - **Option C — true 3D** (3D U-Net / 3D-patch transformer on sub-volumes):
-  highest accuracy ceiling and proper 3D consistency, but abandons DINOv3
-  pretraining and needs far more labeled volume than currently available.
-  Realistic only once the semi-automatic annotation pipeline has filled out
-  several full logs. Heaviest lift — do not start here.
+  abandons DINOv3 pretraining and needs far more labeled volume than is
+  available. Heaviest lift.
 
-**Sequence**: A (now) → measure → B if axial context pays off → C only if A/B
-plateau and annotation volume justifies dropping the DINOv3 prior.
+See **Conclusion: what actually moves the needle** above for the replacement
+plan — more annotated logs first, then schedule/augmentation.
