@@ -145,6 +145,41 @@ So depth is not the remaining lever.
 segmentation (knot IoU still ~0.30). That points at the other hypothesis:
 a single training log is the data floor.
 
+## Stage 2: more training data (2026-09-19)
+
+Stage 1 showed depth is sub-linear, so the remaining hypothesis was the
+**single-training-log data floor**. Human-collection log 1 turned out to be
+fully reviewed as of September (291 frames, up from 69 in July), so training
+moved to **logs 4 + 1** (582 samples, knot pixel fraction doubled to 0.00188)
+with **log 10 still held out** — so every number stays comparable.
+
+| run | best fg | **last-5 mean** | knot | pith | max knot | max pith |
+|---|---|---|---|---|---|---|
+| baseline (n=1, 1 log, w=0) | 0.4160 | 0.4074 | 0.269 | 0.040 | 0.287 | 0.040 |
+| 2.5D (n=1, 1 log, w=1) | 0.4140 | 0.4078 | 0.266 | 0.035 | 0.269 | 0.035 |
+| n=4 (1 log, w=0) | 0.4230 | 0.4186 | 0.297 | 0.025 | 0.298 | 0.041 |
+| **n=4 (2 logs, w=0)** | **0.4450** | **0.4382** | **0.342** | 0.039 | **0.346** | 0.050 |
+
+**Data is the dominant lever.** Doubling the training logs adds **+0.020**
+last-5 mean on top of the multi-layer head (0.4186 → 0.4382) — roughly twice
+what multi-layer itself bought (+0.011), and it lifts knot IoU far more
+(0.298 → 0.346 max, vs 0.287 → 0.298 from depth alone).
+
+Cumulative from the original baseline: fg **0.4074 → 0.4382 (+0.031)**,
+knot **0.287 → 0.346 (+0.059)**.
+
+Two qualitative changes worth noting:
+- **Both rare classes are strong simultaneously** for the first time (knot
+  0.333 with pith 0.050 at ep21). In the single-log runs pith only spiked on
+  epochs where knot dipped, which is what made best-epoch numbers so
+  unreliable.
+- Knot converges far faster: 0.279 at epoch 1, versus 0.040 for the single-log
+  n=4 run at the same epoch.
+
+ValLoss rose briefly around epoch 24 (0.2547 → 0.2679) while TrainLoss kept
+falling, but it recovered to 0.2581 by epoch 27, so this was a blip rather
+than sustained overfitting at 30 epochs.
+
 ## Later options (decide after A vs. baseline)
 
 - **Option B — mid-fusion of per-slice features**: run frozen DINOv3 on N
