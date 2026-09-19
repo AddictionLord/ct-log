@@ -113,6 +113,38 @@ the bottleneck instead — multi-layer features, a stronger head, or unfreezing
 part of the backbone — and getting more annotated logs so the holdout is not a
 single pair.
 
+## Stage 1: multi-layer features (2026-09-19)
+
+Hypothesis from the 2.5D null: the frozen ViT-L probe with **single-layer**
+features and a scratch decoder is the bottleneck, masking any input-side gain.
+Test: concatenate the last `n` intermediate layers as head input
+(`n_layers`, 1024·n dims), everything else fixed. `window=0` throughout.
+
+| run | best fg | **last-5 mean** | wood | knot | pith | max knot | max pith |
+|---|---|---|---|---|---|---|---|
+| baseline (n=1, w=0) | 0.4160 | 0.4074 | 0.939 | 0.269 | 0.040 | 0.287 | 0.040 |
+| 2.5D (n=1, w=1) | 0.4140 | 0.4078 | 0.941 | 0.266 | 0.035 | 0.269 | 0.035 |
+| n=2 (w=0) | 0.4260 | 0.4156 | 0.943 | 0.284 | 0.050 | 0.284 | 0.050 |
+| **n=4 (w=0)** | 0.4230 | **0.4186** | 0.948 | 0.297 | 0.025 | 0.298 | 0.041 |
+
+**Use the last-5-epoch mean, not best-epoch.** Pith IoU swings between 0.001
+and 0.050 on *adjacent* epochs, so a lucky epoch flatters any run — n=2's
+0.4260 "best" is a single spike while its last-5 mean sits below n=4.
+
+**Multi-layer features help — the head was part of the bottleneck.** By last-5
+mean: n=4 (0.4186) > n=2 (0.4156) > n=1 (0.4074), a **+0.011** gain for n=4.
+Unlike the 2.5D null this shows up consistently across epochs and in knot IoU
+(0.297 vs 0.269). It also converges much faster: pith fires around epoch 8
+under n=4 vs epoch 23 for the baseline.
+
+But the gain is **sub-linear in depth** — going 1→2 layers buys most of it,
+2→4 adds little (+0.003), and n=4 costs 3.3× the head parameters (11M → 36M).
+So depth is not the remaining lever.
+
+**+0.011 is real but modest**, well short of closing the gap to usable knot
+segmentation (knot IoU still ~0.30). That points at the other hypothesis:
+a single training log is the data floor.
+
 ## Later options (decide after A vs. baseline)
 
 - **Option B — mid-fusion of per-slice features**: run frozen DINOv3 on N
