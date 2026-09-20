@@ -211,7 +211,10 @@ def main() -> None:
     parser.add_argument("--num_epochs", type=int, default=None, help="Override number of epochs.")
     parser.add_argument("--checkpoint_path", type=str, default=None, help="Override checkpoint path.")
     parser.add_argument("--local_log_dir", type=str, default=None, help="Override local log directory.")
-    parser.add_argument("--lr_schedule", type=str, default=None, choices=["none", "cosine"], help="LR schedule.")
+    parser.add_argument(
+        "--lr_schedule", type=str, default=None, choices=["none", "cosine", "multistep"], help="LR schedule."
+    )
+    parser.add_argument("--resume", action="store_true", help="Save/restore full state so a crash can resume.")
     parser.add_argument("--train_logs", type=str, nargs="+", default=None, help="Override training log dirs.")
     parser.add_argument("--val_logs", type=str, nargs="+", default=None, help="Override validation log dirs.")
     args = parser.parse_args()
@@ -231,6 +234,8 @@ def main() -> None:
         config.local_log_dir = Path(args.local_log_dir)
     if args.lr_schedule is not None:
         config.lr_schedule = args.lr_schedule
+    if args.resume:
+        config.resume = True
     if args.train_logs is not None:
         config.train_logs = args.train_logs
     if args.val_logs is not None:
@@ -285,7 +290,26 @@ def main() -> None:
     best_fg_iou = 0.0
     best_smoothed = 0.0
     fg_history: List[float] = []
-    for epoch_idx in range(config.num_epochs):
+    start_epoch = 0
+
+    # Resume state lives beside the best-model checkpoint. Without it a crash
+    # restart would silently begin at epoch 0 and corrupt the plateau reading.
+    resume_path = config.checkpoint_path.with_suffix(".resume.pth")
+    if config.resume and resume_path.exists():
+        state = torch.load(resume_path)
+        seg_head.load_state_dict(state["seg_head"])
+        optimizer.load_state_dict(state["optimizer"])
+        if pith_head is not None and state.get("pith_head") is not None:
+            pith_head.load_state_dict(state["pith_head"])
+        if scheduler is not None and state.get("scheduler") is not None:
+            scheduler.load_state_dict(state["scheduler"])
+        start_epoch = state["epoch"] + 1
+        best_fg_iou = state["best_fg_iou"]
+        best_smoothed = state["best_smoothed"]
+        fg_history = state["fg_history"]
+        print(f"Resumed from {resume_path} at epoch {start_epoch}")
+
+    for epoch_idx in range(start_epoch, config.num_epochs):
         model.eval()
         seg_head.train()
         if pith_head is not None:
@@ -354,6 +378,22 @@ def main() -> None:
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(seg_head.state_dict(), config.checkpoint_path)
             logger.log_model(seg_head, f"kwp_seg_head_epoch_{epoch_idx}")
+
+        if config.resume:
+            config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "epoch": epoch_idx,
+                    "seg_head": seg_head.state_dict(),
+                    "pith_head": pith_head.state_dict() if pith_head is not None else None,
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                    "best_fg_iou": best_fg_iou,
+                    "best_smoothed": best_smoothed,
+                    "fg_history": fg_history,
+                },
+                resume_path,
+            )
 
     print(f"Best foreground mean IoU: {best_fg_iou:.4f}")
     print(f"Best smoothed (5-epoch) foreground mean IoU: {best_smoothed:.4f}")

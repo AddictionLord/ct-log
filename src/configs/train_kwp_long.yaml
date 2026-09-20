@@ -62,6 +62,10 @@ lr_schedule: none
 log_interval: 200
 train_eval_interval: 10
 
+# Full-state checkpoint each epoch so a crash resumes from the last epoch
+# instead of silently restarting at 0 and corrupting the plateau reading.
+resume: true
+
 use_local_logger: true
 local_log_dir: logs/kwp_long
 use_mlflow: true

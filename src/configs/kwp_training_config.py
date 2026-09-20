@@ -41,6 +41,7 @@ class KwpTrainingConfig(BaseModel):
     train_eval_interval: int = 0
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
+    resume: bool = False
     log_interval: int = 50
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/kwp_seg_head.pth")
 
