@@ -10,9 +10,11 @@ from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.loggers import CombinedLogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
-from src.segmentation_head import create_dinov3_segmentor
+from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
+
+NATIVE_SLICE_SIZE = 778
 
 
 def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int) -> torch.Tensor:
@@ -102,6 +104,48 @@ def compute_loss(
     return config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
 
 
+def pith_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """MSE on normalized pith coordinates, skipping slices with no pith.
+
+    Args:
+        predictions: [B, 2] predicted normalized (x, y).
+        targets: [B, 3] ground-truth (x, y, valid).
+
+    Returns:
+        torch.Tensor: Scalar loss; zero when no slice in the batch has a pith.
+    """
+    valid = targets[:, 2] > 0
+    if not valid.any():
+        return predictions.sum() * 0.0
+    return torch.nn.functional.mse_loss(predictions[valid], targets[valid, :2])
+
+
+@torch.no_grad()
+def pith_pixel_errors(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    config: KwpTrainingConfig,
+) -> List[float]:
+    """Euclidean pith error in ORIGINAL slice pixels, matching ann_pipeline/pith/eval.py.
+
+    Args:
+        predictions: [B, 2] predicted normalized (x, y).
+        targets: [B, 3] ground-truth (x, y, valid).
+        config: Training configuration (unused scale kept explicit below).
+
+    Returns:
+        List[float]: One error per valid slice, in pixels of the native 778x778 slice.
+    """
+    valid = targets[:, 2] > 0
+    if not valid.any():
+        return []
+    # Coordinates are normalized, so scale by the native slice size rather than
+    # the resized input: errors stay comparable to the detector's px numbers.
+    scale = NATIVE_SLICE_SIZE
+    delta = (predictions[valid] - targets[valid, :2]) * scale
+    return torch.linalg.vector_norm(delta, dim=1).cpu().tolist()
+
+
 @torch.no_grad()
 def evaluate(
     model: torch.nn.Module,
@@ -110,6 +154,7 @@ def evaluate(
     transform: torch.nn.Module,
     device: torch.device,
     config: KwpTrainingConfig,
+    pith_head: torch.nn.Module | None = None,
 ) -> tuple[float, dict[str, float]]:
     """Evaluate on a dataloader, returning mean loss and per-class IoU.
 
@@ -120,14 +165,20 @@ def evaluate(
         transform: Normalization transform.
         device: Compute device.
         config: Training configuration.
+        pith_head: Optional pith coordinate regression head.
 
     Returns:
-        tuple[float, dict[str, float]]: mean loss and metric dict.
+        tuple[float, dict[str, float]]: mean loss and metric dict. When a pith
+            head is given, the metrics include Euclidean pixel errors matching
+            ann_pipeline/pith/eval.py (mean/median/p90).
     """
     model.eval()
     seg_head.eval()
+    if pith_head is not None:
+        pith_head.eval()
     losses = []
     iou = PerClassIoU(num_classes=config.num_classes + 1)
+    pith_errors: List[float] = []
 
     for batch in dataloader:
         images = transform(batch["image"].to(device))
@@ -136,10 +187,18 @@ def evaluate(
         features = extract_features(model, images, config.n_layers)
         outputs = seg_head(features)
 
+        if pith_head is not None:
+            pith_errors.extend(pith_pixel_errors(pith_head(features), batch["pith_xy"].to(device), config))
+
         losses.append(compute_loss(outputs, masks, config).item())
         iou.update(outputs.argmax(dim=1).cpu(), masks.cpu())
 
     metrics = iou.compute()
+    if pith_errors:
+        errors = torch.tensor(pith_errors)
+        metrics["pith_err_mean_px"] = float(errors.mean().item())
+        metrics["pith_err_median_px"] = float(errors.median().item())
+        metrics["pith_err_p90_px"] = float(torch.quantile(errors, 0.9).item())
     return float(torch.tensor(losses).mean().item()), metrics
 
 
@@ -206,8 +265,14 @@ def main() -> None:
     model = model.to(device)
     seg_head = seg_head.to(device)
 
+    pith_head = None
+    trainable = list(seg_head.parameters())
+    if config.pith_regression:
+        pith_head = PithRegressionHead(feature_dim=1024 * config.n_layers).to(device)
+        trainable += list(pith_head.parameters())
+
     transform = make_transform()
-    optimizer = torch.optim.Adam(seg_head.parameters(), lr=config.lr)
+    optimizer = torch.optim.Adam(trainable, lr=config.lr)
 
     scheduler = None
     if config.lr_schedule == "cosine":
@@ -223,6 +288,8 @@ def main() -> None:
     for epoch_idx in range(config.num_epochs):
         model.eval()
         seg_head.train()
+        if pith_head is not None:
+            pith_head.train()
         losses = []
 
         for batch_idx, batch in enumerate(loaders["train"]):
@@ -236,6 +303,8 @@ def main() -> None:
 
             outputs = seg_head(features)
             loss = compute_loss(outputs, masks, config)
+            if pith_head is not None:
+                loss = loss + config.pith_loss_weight * pith_loss(pith_head(features), batch["pith_xy"].to(device))
             loss.backward()
             optimizer.step()
 
@@ -245,7 +314,7 @@ def main() -> None:
 
         train_loss = float(torch.tensor(losses).mean().item())
 
-        val_loss, val_metrics = evaluate(model, seg_head, loaders["val"], transform, device, config)
+        val_loss, val_metrics = evaluate(model, seg_head, loaders["val"], transform, device, config, pith_head)
         fg_iou = val_metrics["mean_iou_fg"]
 
         empty_metrics = {key: 0.0 for key in val_metrics}
@@ -266,7 +335,9 @@ def main() -> None:
         # Train-split IoU on the same metric as val: the gap between them is the
         # bias/variance signal (both low => underfit, train >> val => overfit).
         if config.train_eval_interval and epoch_idx % config.train_eval_interval == 0:
-            train_eval_loss, train_eval_metrics = evaluate(model, seg_head, loaders["train"], transform, device, config)
+            train_eval_loss, train_eval_metrics = evaluate(
+                model, seg_head, loaders["train"], transform, device, config, pith_head
+            )
             print(
                 f"Epoch {epoch_idx}, TRAIN-EVAL loss {train_eval_loss:.4f} "
                 f"fg={train_eval_metrics['mean_iou_fg']:.4f} "
@@ -294,7 +365,7 @@ def main() -> None:
             seg_head.load_state_dict(torch.load(config.checkpoint_path))
         else:
             print("No checkpoint written; testing final-epoch weights instead.")
-        test_loss, test_metrics = evaluate(model, seg_head, loaders["test"], transform, device, config)
+        test_loss, test_metrics = evaluate(model, seg_head, loaders["test"], transform, device, config, pith_head)
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")
         tracker.add(config.num_epochs, "test", test_loss, test_metrics["mean_iou_fg"], **test_metrics)

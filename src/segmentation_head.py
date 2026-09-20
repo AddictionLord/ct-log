@@ -56,6 +56,43 @@ class SimpleSegmentationHead(nn.Module):
         return segmentation_logits
 
 
+class PithRegressionHead(nn.Module):
+    """Predicts normalized pith (x, y) from pooled DINOv3 patch features.
+
+    Pith is a single point per slice. At a 16x-downsampled output grid a
+    rasterized pith blob is sub-pixel, so segmenting it is ill-posed (measured
+    ceiling IoU 0.000); regressing the coordinate directly is well-posed and
+    matches how the annotation pipeline reports pith (Euclidean pixel error).
+    """
+
+    def __init__(self, feature_dim: int = 1024, hidden_dim: int = 256):
+        """Initialize the pith regression head.
+
+        Args:
+            feature_dim: Feature dimension from DINOv3 (1024 per layer for ViT-L).
+            hidden_dim: Width of the hidden layer.
+        """
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, patch_features: torch.Tensor) -> torch.Tensor:
+        """Predict normalized pith coordinates.
+
+        Args:
+            patch_features: [B, num_patches, feature_dim] patch tokens.
+
+        Returns:
+            torch.Tensor: [B, 2] normalized (x, y) in [0, 1].
+        """
+        pooled = patch_features.mean(dim=1)
+        return self.mlp(pooled)
+
+
 def create_dinov3_segmentor(
     backbone_weights: str, num_classes: int = 150, input_size: int = 224, n_layers: int = 1
 ) -> Tuple[nn.Module, nn.Module]:

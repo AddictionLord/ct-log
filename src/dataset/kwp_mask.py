@@ -29,6 +29,25 @@ class KwpMaskBuilder:
     def __init__(self, pith_radius: int = 3) -> None:
         self.pith_radius = pith_radius
 
+    @staticmethod
+    def pith_xy_normalized(annotation: Dict[str, Any]) -> torch.Tensor:
+        """Extract the pith point as normalized (x, y), resolution-independent.
+
+        Args:
+            annotation: Supervisely image annotation dict.
+
+        Returns:
+            torch.Tensor: [3] tensor (x, y, valid); valid is 0.0 when the slice
+                has no pith annotation, in which case x and y are 0.
+        """
+        height = annotation["size"]["height"]
+        width = annotation["size"]["width"]
+        for obj in annotation["objects"]:
+            if obj["classTitle"].lower().replace(" ", "_") == "pith":
+                x, y = obj["points"]["exterior"][0]
+                return torch.tensor([x / width, y / height, 1.0], dtype=torch.float32)
+        return torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
+
     def build(self, annotation: Dict[str, Any]) -> torch.Tensor:
         """Rasterize a Supervisely annotation into a [H, W] int64 class-id mask.
 

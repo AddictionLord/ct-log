@@ -150,5 +150,6 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
             annotation = json.load(f)
         mask = self.mask_builder.build(annotation).unsqueeze(0)
         mask = self.resize_mask(mask).squeeze(0)
+        pith_xy = self.mask_builder.pith_xy_normalized(annotation)
 
-        return {"image": image, "mask": mask, "path": str(sample["center"])}
+        return {"image": image, "mask": mask, "pith_xy": pith_xy, "path": str(sample["center"])}
