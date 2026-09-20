@@ -33,7 +33,9 @@ while true; do
     started=$(date +%s)
     echo "$(date '+%F %T') starting (restart #$restarts)" >> "$SUP_LOG"
 
-    conda run -n ct-log --no-capture-output python -m src.train_kwp \
+    # -u: conda run buffers stdout when it is not a TTY, which leaves the log
+    # empty for long stretches and makes the run impossible to monitor.
+    conda run -n ct-log --no-capture-output python -u -m src.train_kwp \
         --config "$CONFIG" --run_name "$RUN_NAME" --local_log_dir "$LOG_DIR" \
         >> "$LOG" 2>&1
     rc=$?
