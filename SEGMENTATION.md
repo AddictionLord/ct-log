@@ -233,6 +233,74 @@ than trading off.
    context buys nothing here; a more elaborate fusion scheme would need a
    different justification than "CT is volumetric".
 
+## v1 model (2026-09-20)
+
+First deliverable. Frozen DINOv3 ViT-L/16, 4 fused intermediate layers,
+2.5D input (`window=1`), 320x320, trained 30 epochs at constant LR on
+6 auto-annotated Phase2 logs + human log 4 (2082 samples). Model selected by
+best 5-epoch-smoothed val fg IoU (epoch ~23).
+
+Weights: `/mnt/D/models/ct-log/kwp_v1_seg_head.pth` (seg head),
+`kwp_v1_full_state.pth` (full training state incl. pith head).
+
+**Held-out test (log 10, never used for training or selection):**
+
+| class | IoU |
+|---|---|
+| background | 0.997 |
+| **wood** | **0.958** |
+| knot | 0.356 |
+| pith (segmentation) | 0.158 |
+| **foreground mean** | **0.490** |
+
+Pith regression head: **12.1px median** error (test), 17.5px (val).
+
+**What is usable.** Wood segmentation at 0.958 is production-quality and can
+replace or cross-check the `threshold_peel` detector. Knot at 0.356 finds
+large knots reliably but misses thin ones, so it is useful for seeding and
+review assistance, not as a final annotation. Pith at 12px is far worse than
+the YOLO-OBB detector's 0.97px median - **keep using the detector for pith**.
+
+### Known limitation: thin-knot blindness
+
+Predictions on val show the model outputting *no knot at all* on frames whose
+knots are thin faint streaks, while handling thick lobed knots well. Cause is a
+training-label size bias:
+
+| source | median knot thickness | knots/sample |
+|---|---|---|
+| auto logs 2,3,05,06,08 | 20-37px | 8-25 |
+| human logs 1,4,10 | 7-13px | 33-48 |
+
+Propagation merges adjacent knots into single fat blobs and misses smaller
+ones, so the model learns a fat-knot prior. This is **not** fixable via the
+post-processing filters (min 150px, eccentricity, solidity are all rejection
+filters; `fill_holes` only fills interiors) - it originates in MedSAM2
+propagation. Point seeds do not fix it either (17.9px vs ellipse 16.1px,
+against human 7.2px on the same log).
+
+### Measured diagnostics behind v1
+
+- **Capacity is not the limit.** Train fg reached 0.792 (knot 0.675) at epoch
+  30 and was still climbing, while val peaked at 0.525 - a +0.29 gap. This is
+  a variance problem, not a capacity one, so higher resolution / a bigger
+  decoder is *not* the priority.
+- **Synthetic data helps despite its bias.** Human-only ablation (291 frames,
+  log 4) reached val fg 0.427 vs 0.525 for the mixed 2082-frame set, and
+  overfit *harder* (+0.329 vs +0.291). Keep the auto data.
+- **Data available for scaling:** 55 raw CT volumes on disk (~16,500 frames),
+  only 9 annotated. Supervisely holds no further annotated logs.
+
+### Next steps
+
+1. **Augmentation** - variance is confirmed as the binding constraint. Include
+   scale/erosion on knot masks specifically, to counter the fat-knot prior.
+2. **More auto logs** - the ablation shows volume helps; 46 unannotated raw
+   logs are available. Generate in a small batch first and re-measure the
+   thickness bias before scaling.
+3. **Use v1 to improve propagation** - the wood head (0.958) is already good
+   enough to constrain propagation, closing the loop.
+
 ## Later options — superseded
 
 The original plan was a ladder: **A** (channel-stacked 2.5D) → **B**
