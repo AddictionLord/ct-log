@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 from typing import List
 
@@ -299,9 +300,25 @@ def main() -> None:
         state = torch.load(resume_path)
         seg_head.load_state_dict(state["seg_head"])
         optimizer.load_state_dict(state["optimizer"])
-        if pith_head is not None and state.get("pith_head") is not None:
+
+        # Fail loudly on a mismatch rather than silently continuing with a
+        # freshly-initialized head or scheduler, which would invalidate the run.
+        if (pith_head is not None) != (state.get("pith_head") is not None):
+            message = (
+                f"Resume mismatch: pith_regression={config.pith_regression} but checkpoint "
+                f"{'has' if state.get('pith_head') is not None else 'lacks'} pith head state."
+            )
+            raise ValueError(message)
+        if (scheduler is not None) != (state.get("scheduler") is not None):
+            message = (
+                f"Resume mismatch: lr_schedule={config.lr_schedule} but checkpoint "
+                f"{'has' if state.get('scheduler') is not None else 'lacks'} scheduler state."
+            )
+            raise ValueError(message)
+
+        if pith_head is not None:
             pith_head.load_state_dict(state["pith_head"])
-        if scheduler is not None and state.get("scheduler") is not None:
+        if scheduler is not None:
             scheduler.load_state_dict(state["scheduler"])
         start_epoch = state["epoch"] + 1
         best_fg_iou = state["best_fg_iou"]
@@ -381,6 +398,10 @@ def main() -> None:
 
         if config.resume:
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            # Write to a temp file and rename: a kill mid-torch.save would leave
+            # a truncated, unreadable checkpoint, losing exactly the state that
+            # resume exists to protect. os.replace is atomic on the same filesystem.
+            tmp_path = resume_path.with_suffix(".tmp")
             torch.save(
                 {
                     "epoch": epoch_idx,
@@ -392,8 +413,9 @@ def main() -> None:
                     "best_smoothed": best_smoothed,
                     "fg_history": fg_history,
                 },
-                resume_path,
+                tmp_path,
             )
+            os.replace(tmp_path, resume_path)
 
     print(f"Best foreground mean IoU: {best_fg_iou:.4f}")
     print(f"Best smoothed (5-epoch) foreground mean IoU: {best_smoothed:.4f}")
