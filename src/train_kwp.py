@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import List
 
 import torch
 import torchvision
@@ -38,13 +39,14 @@ def make_transform() -> torchvision.transforms.Normalize:
 
 
 def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.DataLoader]:
-    """Create train/val dataloaders with a log-level holdout.
+    """Create train/val (and optional test) dataloaders with a log-level holdout.
 
     Args:
         config: Training configuration.
 
     Returns:
-        dict[str, torch.utils.data.DataLoader]: loaders keyed by "train" and "val".
+        dict[str, torch.utils.data.DataLoader]: loaders keyed by "train", "val"
+            and, when test_logs is set, "test".
     """
     train_ds = CTLogKwpDataset(
         config.train_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
@@ -52,7 +54,11 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
     val_ds = CTLogKwpDataset(
         config.val_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
     )
-    return {
+    if config.test_logs:
+        test_ds = CTLogKwpDataset(
+            config.test_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+        )
+    loaders = {
         "train": torch.utils.data.DataLoader(
             train_ds, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers
         ),
@@ -60,6 +66,11 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         ),
     }
+    if config.test_logs:
+        loaders["test"] = torch.utils.data.DataLoader(
+            test_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+        )
+    return loaders
 
 
 def compute_loss(
@@ -141,6 +152,7 @@ def main() -> None:
     parser.add_argument("--num_epochs", type=int, default=None, help="Override number of epochs.")
     parser.add_argument("--checkpoint_path", type=str, default=None, help="Override checkpoint path.")
     parser.add_argument("--local_log_dir", type=str, default=None, help="Override local log directory.")
+    parser.add_argument("--lr_schedule", type=str, default=None, choices=["none", "cosine"], help="LR schedule.")
     parser.add_argument("--train_logs", type=str, nargs="+", default=None, help="Override training log dirs.")
     parser.add_argument("--val_logs", type=str, nargs="+", default=None, help="Override validation log dirs.")
     args = parser.parse_args()
@@ -158,6 +170,8 @@ def main() -> None:
         config.checkpoint_path = Path(args.checkpoint_path)
     if args.local_log_dir is not None:
         config.local_log_dir = Path(args.local_log_dir)
+    if args.lr_schedule is not None:
+        config.lr_schedule = args.lr_schedule
     if args.train_logs is not None:
         config.train_logs = args.train_logs
     if args.val_logs is not None:
@@ -195,7 +209,17 @@ def main() -> None:
     transform = make_transform()
     optimizer = torch.optim.Adam(seg_head.parameters(), lr=config.lr)
 
+    scheduler = None
+    if config.lr_schedule == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
+    elif config.lr_schedule == "multistep":
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=config.lr_milestones, gamma=config.lr_gamma
+        )
+
     best_fg_iou = 0.0
+    best_smoothed = 0.0
+    fg_history: List[float] = []
     for epoch_idx in range(config.num_epochs):
         model.eval()
         seg_head.train()
@@ -229,17 +253,54 @@ def main() -> None:
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)
         logger.log_metrics(tracker.get(epoch_idx, "val")[-1])
-        iou_str = " ".join(f"{k}={v:.3f}" for k, v in val_metrics.items())
-        print(f"Epoch {epoch_idx}, TrainLoss {train_loss:.4f}, ValLoss {val_loss:.4f}, {iou_str}")
+        fg_history.append(fg_iou)
+        smoothed = float(sum(fg_history[-5:]) / len(fg_history[-5:]))
+        best_fg_iou = max(best_fg_iou, fg_iou)
 
-        if fg_iou > best_fg_iou:
-            best_fg_iou = fg_iou
+        iou_str = " ".join(f"{k}={v:.3f}" for k, v in val_metrics.items())
+        print(
+            f"Epoch {epoch_idx}, TrainLoss {train_loss:.4f}, ValLoss {val_loss:.4f}, "
+            f"{iou_str} smoothed_fg={smoothed:.4f}"
+        )
+
+        # Train-split IoU on the same metric as val: the gap between them is the
+        # bias/variance signal (both low => underfit, train >> val => overfit).
+        if config.train_eval_interval and epoch_idx % config.train_eval_interval == 0:
+            train_eval_loss, train_eval_metrics = evaluate(model, seg_head, loaders["train"], transform, device, config)
+            print(
+                f"Epoch {epoch_idx}, TRAIN-EVAL loss {train_eval_loss:.4f} "
+                f"fg={train_eval_metrics['mean_iou_fg']:.4f} "
+                f"knot={train_eval_metrics.get('iou_2', 0):.3f} gap={train_eval_metrics['mean_iou_fg'] - fg_iou:+.4f}"
+            )
+
+        if scheduler is not None:
+            scheduler.step()
+
+        # Checkpoint on the 5-epoch smoothed metric: raw fg swings ~+-0.01 between
+        # adjacent epochs, so a best-epoch criterion latches onto lucky outliers.
+        if len(fg_history) >= 5 and smoothed > best_smoothed:
+            best_smoothed = smoothed
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(seg_head.state_dict(), config.checkpoint_path)
             logger.log_model(seg_head, f"kwp_seg_head_epoch_{epoch_idx}")
 
-    logger.end()
     print(f"Best foreground mean IoU: {best_fg_iou:.4f}")
+    print(f"Best smoothed (5-epoch) foreground mean IoU: {best_smoothed:.4f}")
+
+    # Test on the held-out log using the checkpointed (best-smoothed) head, not
+    # the final-epoch weights.
+    if "test" in loaders:
+        if config.checkpoint_path.exists():
+            seg_head.load_state_dict(torch.load(config.checkpoint_path))
+        else:
+            print("No checkpoint written; testing final-epoch weights instead.")
+        test_loss, test_metrics = evaluate(model, seg_head, loaders["test"], transform, device, config)
+        test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
+        print(f"TEST loss {test_loss:.4f} {test_str}")
+        tracker.add(config.num_epochs, "test", test_loss, test_metrics["mean_iou_fg"], **test_metrics)
+        logger.log_metrics(tracker.get(config.num_epochs, "test")[-1])
+
+    logger.end()
 
 
 if __name__ == "__main__":

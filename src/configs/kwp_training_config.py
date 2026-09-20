@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 import yaml
@@ -34,6 +34,11 @@ class KwpTrainingConfig(BaseModel):
     tversky_beta: float = Field(0.7, ge=0, le=1)
     ignore_background_in_tversky: bool = True
 
+    lr_schedule: Literal["none", "cosine", "multistep"] = "none"
+    lr_milestones: List[int] = []
+    lr_gamma: float = 0.1
+    test_logs: List[str] = []
+    train_eval_interval: int = 0
     log_interval: int = 50
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/kwp_seg_head.pth")
 
