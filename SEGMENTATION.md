@@ -301,6 +301,70 @@ against human 7.2px on the same log).
 3. **Use v1 to improve propagation** - the wood head (0.958) is already good
    enough to constrain propagation, closing the loop.
 
+## v1-extended (2026-09-21) — trained on 20 auto logs
+
+Same architecture as v1 (frozen DINOv3 ViT-L/16, 4 fused layers, 2.5D
+`window=1`, 320x320, constant LR, pith regression head). Changes: **20 auto
+training logs** (6 existing Phase2 + 14 newly generated with retrained
+detector v4) and **val moved to human logs 1+4**, test still human log 10.
+
+**Held-out test (log 10), best checkpoint (epoch ~12 by smoothed val fg):**
+
+| class | v1 (7 logs) | **v1-extended (20 logs)** |
+|---|---|---|
+| wood | 0.958 | **0.966** |
+| knot | 0.356 | **0.390** |
+| pith (seg) | 0.158 | **0.236** |
+| **fg mean** | 0.490 | **0.531** |
+| pith regression (median px) | 12.1 | **5.2** |
+
+**The extended dataset worked: test fg 0.490 -> 0.531 (+0.041).** Pith
+regression more than halved its error (12.1px -> 5.2px), and knot gained
++0.034. Every class improved.
+
+Val peaked at fg 0.557 (epoch 12); train-val gap at epoch 10 was +0.137,
+roughly half the +0.204 seen at the same epoch with 7 logs - more data reduced
+overfitting as expected.
+
+**Attribution warning.** Three variables moved at once (detector v3->v4,
+6->20 auto logs, val composition 1 -> 1+4), and the run reached only ~16
+epochs where v1 peaked at 23. The +0.041 is a floor, not a converged result,
+and cannot be attributed to any single change.
+
+**Detector v4** (by the Annotations session): mAP50 0.966 / mAP50-95 0.7395 at
+epoch 149 (v3: 0.952 / 0.695), trained on logs 1/4/2/08/3, val log 10. Box
+width on held-out log 10: v3 16.1px -> v4 14.6px, human GT 12.9px.
+
+### Run did not complete
+
+Crashed three times and was not resumed: rc=132 (SIGILL) after 6.4h, then
+rc=1, then a third start that died without the supervisor recording it - the
+supervisor process itself died, so auto-resume never fired. Training stopped
+at 2026-09-21 10:02 mid-epoch 16. Full state is in
+`kwp_v1_extended.resume.pth`, so the run is resumable from epoch ~15.
+
+### Thin-knot filter analysis (for v2)
+
+The annotation filters reject essentially all thin knots. Ablation over
+generated logs 13-16 (543 instances entering filters, 274 thin <8px):
+
+| filter | rejected | thin rejected | share of thin losses |
+|---|---|---|---|
+| area<150 | 227 | 224 | 84% |
+| solidity<0.85 | 63 | 43 | 16% |
+| eccentricity<0.7 | 34 | **0** | **0%** |
+| kept | 219 | **7** | — |
+
+**97% of thin knots are rejected.** Propagation produces thin knots in
+quantity; the filters discard them. `eccentricity<0.7` contributes nothing -
+it rejects values *below* 0.7, i.e. round blobs, so thin streaks pass
+trivially. Note the chain is ordered with area first, so these are
+first-responsible shares, not independent contributions.
+
+Proposed v2 experiment: 2x2 over area (150/40) x solidity (0.85/0.6), leaving
+eccentricity alone, plus a real-vs-noise check on recovered instances (score
+them against human labels on log 10, which is out of both detectors' training).
+
 ## Later options — superseded
 
 The original plan was a ladder: **A** (channel-stacked 2.5D) → **B**
