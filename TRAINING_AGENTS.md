@@ -22,7 +22,7 @@ before starting anything. When in doubt, ask the user instead of guessing.
 | Host | GPU | Status |
 |---|---|---|
 | Local machine (this repo) | GTX 1650, 4 GB | **Default.** conda env `ct-log`, torch 2.7.0+cu128. Data in `/mnt/D/datasets/ct_log`, weights in `/mnt/D/models`. |
-| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Provisioned 2026-09-24 under `~/ctlog-eval/` (copied working tree, data, DINOv3 weights). Jobs run via `scripts/euler.py bg` in `~/jobs/<name>/`. Use `num_workers=0`, batch 8 fits. See [euler](#euler-remote-gpu). |
+| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Provisioned 2026-09-24 under `~/ctlog-eval/` (copied working tree, data, DINOv3 weights). Jobs run via `scripts/euler.py bg` in `~/jobs/<name>/`. `num_workers=0` is forced (64 MB `/dev/shm`). Throughput plateaus at ~13.5 samples/s from batch 8 up (the single-threaded loader is the bottleneck, not VRAM), so bigger batches don't help. See [euler](#euler-remote-gpu). |
 
 ## Launching (local)
 
@@ -129,8 +129,8 @@ uv run --no-project scripts/euler.py close      # delete the kernel when done
 
 - `put` is reliable up to ~150 MB per file. Split bigger files (`split -b 150M`), upload the
   parts, `cat` them together on euler and compare `md5sum` on both sides. `put` checks the
-  uploaded size and exits non-zero on failure. Don't pipe it into `tail`/`grep` when you rely
-  on `$?`.
+  uploaded size and exits non-zero on failure. A pipe (`put ... | tail`) reports the status of the
+  last command only, so use `set -o pipefail` when you rely on `$?`.
 - Run `uv run` with `--no-project`; otherwise uv creates `uv.lock` and `.venv` in the repo.
 - **Shared account**: every user is `jovyan` with the same home and token. `~/work`, `~/.ssh`,
   `.gitconfig` belong to others: never read, modify or delete them. Work only in `~/ctlog-eval/`
