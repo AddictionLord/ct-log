@@ -1,19 +1,23 @@
 import argparse
 import os
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import torch
 import torchvision
 
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
-from src.loggers import CombinedLogger, LocalLogger, MlflowLogger
+from src.dataset.kwp_mask import KwpMaskBuilder
+from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
+from src.utils.checkpoints import save_best_copy
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
+from src.utils.prediction_panels import render_panel
+from src.utils.provenance import git_provenance
 
 NATIVE_SLICE_SIZE = 778
 
@@ -178,7 +182,7 @@ def evaluate(
     if pith_head is not None:
         pith_head.eval()
     losses = []
-    iou = PerClassIoU(num_classes=config.num_classes + 1)
+    iou = PerClassIoU(num_classes=config.num_classes + 1, class_names=KwpMaskBuilder.class_names())
     pith_errors: List[float] = []
 
     for batch in dataloader:
@@ -201,6 +205,55 @@ def evaluate(
         metrics["pith_err_median_px"] = float(errors.median().item())
         metrics["pith_err_p90_px"] = float(torch.quantile(errors, 0.9).item())
     return float(torch.tensor(losses).mean().item()), metrics
+
+
+@torch.no_grad()
+def log_prediction_panels(
+    model: torch.nn.Module,
+    seg_head: torch.nn.Module,
+    pith_head: Optional[torch.nn.Module],
+    dataset: CTLogKwpDataset,
+    split: str,
+    step: int,
+    transform: torch.nn.Module,
+    device: torch.device,
+    config: KwpTrainingConfig,
+    logger: ILogger,
+) -> None:
+    """Log input | ground truth | prediction | error panels for fixed, evenly spaced slices.
+
+    The same slices are used at every step, so the MLflow image slider shows how one slice
+    evolves over training.
+
+    Args:
+        model: Frozen DINOv3 backbone.
+        seg_head: Segmentation head.
+        pith_head: Optional pith regression head; its prediction is drawn as a magenta cross.
+        dataset: Dataset of the split.
+        split: Split name used as the image key prefix.
+        step: Epoch the panels belong to.
+        transform: Normalization transform.
+        device: Compute device.
+        config: Training configuration.
+        logger: Logger receiving the images.
+    """
+    model.eval()
+    seg_head.eval()
+    if pith_head is not None:
+        pith_head.eval()
+
+    indices = torch.linspace(0, len(dataset) - 1, config.viz_num_frames).round().long().unique().tolist()
+    samples = [dataset[index] for index in indices]
+    images = torch.stack([sample["image"] for sample in samples])
+    features = extract_features(model, transform(images.to(device)), config.n_layers)
+    predictions = seg_head(features).argmax(dim=1).cpu().numpy()
+    pith_predictions = pith_head(features).cpu().tolist() if pith_head is not None else [None] * len(samples)
+
+    for sample, prediction, pith_prediction in zip(samples, predictions, pith_predictions):
+        pith_true = sample["pith_xy"][:2].tolist() if sample["pith_xy"][2] > 0 else None
+        panel = render_panel(sample["image"], sample["mask"].numpy(), prediction, pith_true, pith_prediction)
+        path = Path(sample["path"])
+        logger.log_image(panel, f"{split}/log{path.parent.parent.name}_{path.stem}", step)
 
 
 def main() -> None:
@@ -260,7 +313,9 @@ def main() -> None:
         )
     logger = CombinedLogger(loggers)
     logger.start()
-    logger.log_params(config.model_dump())
+    run_params = config.model_dump(mode="json") | git_provenance()
+    logger.log_params(run_params)
+    logger.log_dict(run_params, "config.yaml")
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
@@ -290,8 +345,11 @@ def main() -> None:
 
     best_fg_iou = 0.0
     best_smoothed = 0.0
+    best_epoch: Optional[int] = None
+    last_uploaded_smoothed = 0.0
     fg_history: List[float] = []
     start_epoch = 0
+    best_copy_dir = config.local_checkpoint_dir / (config.mlflow_run_name or config.checkpoint_path.stem)
 
     # Resume state lives beside the best-model checkpoint. Without it a crash
     # restart would silently begin at epoch 0 and corrupt the plateau reading.
@@ -324,6 +382,8 @@ def main() -> None:
         best_fg_iou = state["best_fg_iou"]
         best_smoothed = state["best_smoothed"]
         fg_history = state["fg_history"]
+        best_epoch = state.get("best_epoch")
+        last_uploaded_smoothed = state.get("last_uploaded_smoothed", best_smoothed)
         print(f"Resumed from {resume_path} at epoch {start_epoch}")
 
     for epoch_idx in range(start_epoch, config.num_epochs):
@@ -361,7 +421,7 @@ def main() -> None:
         # Train IoU is only computed by the periodic train-eval below; NaN keeps the CSV columns
         # aligned and is skipped by MLflow, where zeros would read as a collapsed model.
         not_computed = {key: float("nan") for key in val_metrics}
-        tracker.add(epoch_idx, "train", train_loss, float("nan"), **not_computed)
+        tracker.add(epoch_idx, "train", train_loss, float("nan"), lr=optimizer.param_groups[0]["lr"], **not_computed)
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)
         logger.log_metrics(tracker.get(epoch_idx, "val")[-1])
@@ -388,8 +448,23 @@ def main() -> None:
             print(
                 f"Epoch {epoch_idx}, TRAIN-EVAL loss {train_eval_loss:.4f} "
                 f"fg={train_eval_metrics['mean_iou_fg']:.4f} "
-                f"knot={train_eval_metrics.get('iou_2', 0):.3f} gap={train_eval_metrics['mean_iou_fg'] - fg_iou:+.4f}"
+                f"knot={train_eval_metrics['iou_knot']:.3f} gap={train_eval_metrics['mean_iou_fg'] - fg_iou:+.4f}"
             )
+
+        if config.viz_interval and (epoch_idx % config.viz_interval == 0 or epoch_idx == config.num_epochs - 1):
+            for split in ("train", "val"):
+                log_prediction_panels(
+                    model,
+                    seg_head,
+                    pith_head,
+                    loaders[split].dataset,
+                    split,
+                    epoch_idx,
+                    transform,
+                    device,
+                    config,
+                    logger,
+                )
 
         if scheduler is not None:
             scheduler.step()
@@ -398,9 +473,25 @@ def main() -> None:
         # adjacent epochs, so a best-epoch criterion latches onto lucky outliers.
         if len(fg_history) >= 5 and smoothed > best_smoothed:
             best_smoothed = smoothed
+            best_epoch = epoch_idx
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(seg_head.state_dict(), config.checkpoint_path)
-            logger.log_model(seg_head, f"kwp_seg_head_epoch_{epoch_idx}", seg_head.example_input())
+            copy_path = save_best_copy(
+                best_state(seg_head, pith_head), best_copy_dir, epoch_idx, config.local_checkpoint_keep
+            )
+            print(f"Epoch {epoch_idx}, new best smoothed_fg={smoothed:.4f}, local copy {copy_path}")
+
+            # Each logged model costs ~160 MB of DagsHub storage that deletes never free, so
+            # only upload bests that moved meaningfully; the true best is uploaded after training.
+            if smoothed >= last_uploaded_smoothed + config.mlflow_model_min_improvement:
+                logger.log_model(seg_head, f"kwp_seg_head_epoch_{epoch_idx}", seg_head.example_input(), step=epoch_idx)
+                last_uploaded_smoothed = smoothed
+                print(f"Epoch {epoch_idx}, model uploaded (smoothed_fg={smoothed:.4f})")
+            else:
+                print(
+                    f"Epoch {epoch_idx}, model upload skipped: smoothed_fg={smoothed:.4f} < last uploaded "
+                    f"{last_uploaded_smoothed:.4f} + {config.mlflow_model_min_improvement}"
+                )
 
         if config.resume:
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -417,6 +508,8 @@ def main() -> None:
                     "scheduler": scheduler.state_dict() if scheduler is not None else None,
                     "best_fg_iou": best_fg_iou,
                     "best_smoothed": best_smoothed,
+                    "best_epoch": best_epoch,
+                    "last_uploaded_smoothed": last_uploaded_smoothed,
                     "fg_history": fg_history,
                 },
                 tmp_path,
@@ -428,18 +521,52 @@ def main() -> None:
 
     # Test on the held-out log using the checkpointed (best-smoothed) head, not
     # the final-epoch weights.
+    if best_epoch is not None:
+        seg_head.load_state_dict(torch.load(config.checkpoint_path))
+        if best_smoothed > last_uploaded_smoothed:
+            logger.log_model(seg_head, f"kwp_seg_head_epoch_{best_epoch}", seg_head.example_input(), step=best_epoch)
+            last_uploaded_smoothed = best_smoothed
+            print(f"Final best (epoch {best_epoch}, smoothed_fg={best_smoothed:.4f}) was not uploaded; uploaded now")
+
     if "test" in loaders:
-        if config.checkpoint_path.exists():
-            seg_head.load_state_dict(torch.load(config.checkpoint_path))
-        else:
+        if best_epoch is None:
             print("No checkpoint written; testing final-epoch weights instead.")
         test_loss, test_metrics = evaluate(model, seg_head, loaders["test"], transform, device, config, pith_head)
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")
         tracker.add(config.num_epochs, "test", test_loss, test_metrics["mean_iou_fg"], **test_metrics)
         logger.log_metrics(tracker.get(config.num_epochs, "test")[-1])
+        if config.viz_interval:
+            log_prediction_panels(
+                model,
+                seg_head,
+                pith_head,
+                loaders["test"].dataset,
+                "test",
+                config.num_epochs,
+                transform,
+                device,
+                config,
+                logger,
+            )
 
     logger.end()
+
+
+def best_state(seg_head: torch.nn.Module, pith_head: Optional[torch.nn.Module]) -> Dict[str, Optional[dict]]:
+    """State dicts of a best model for the local best-copy history.
+
+    Args:
+        seg_head: Segmentation head.
+        pith_head: Optional pith regression head.
+
+    Returns:
+        Dict[str, Optional[dict]]: seg_head and pith_head state dicts (pith_head None when absent).
+    """
+    return {
+        "seg_head": seg_head.state_dict(),
+        "pith_head": pith_head.state_dict() if pith_head is not None else None,
+    }
 
 
 if __name__ == "__main__":

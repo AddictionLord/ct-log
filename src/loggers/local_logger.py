@@ -1,8 +1,12 @@
 import csv
+import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
+import numpy as np
+from PIL import Image
 import torch
+import yaml
 
 from src.loggers.ilogger import ILogger
 from src.utils.metrics import EpochMetrics
@@ -64,13 +68,16 @@ class LocalLogger(ILogger):
         with open(params_path, "w") as f:
             f.writelines(f"{key}: {value}\n" for key, value in params.items())
 
-    def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
+    def log_model(
+        self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None
+    ) -> None:
         """Log a trained model.
 
         Args:
             model: Model to log (typically a PyTorch model state dict or module).
             name: Name or identifier for the model.
             input_example: Unused; accepted for interface compatibility.
+            step: Unused; the epoch is already part of the name.
         """
         model_path = self.models_dir / f"{name}.pth"
 
@@ -80,6 +87,33 @@ class LocalLogger(ILogger):
             torch.save(model, model_path)
         else:
             torch.save(model, model_path)
+
+    def log_image(self, image: np.ndarray, key: str, step: int) -> None:
+        """Save an image as PNG under <log_dir>/images/.
+
+        Args:
+            image: [H, W, 3] uint8 RGB image.
+            key: Stable name of the image series; slashes become double underscores.
+            step: Epoch the image belongs to.
+        """
+        images_dir = self.log_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(image).save(images_dir / f"{key.replace('/', '__')}_step{step:04d}.png")
+
+    def log_dict(self, data: Dict[str, Any], artifact_file: str) -> None:
+        """Write a dictionary to <log_dir>/<artifact_file> as YAML or JSON.
+
+        Args:
+            data: JSON-serializable dictionary.
+            artifact_file: Relative file name; a .json suffix writes JSON, anything else YAML.
+        """
+        path = self.log_dir / artifact_file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            if path.suffix == ".json":
+                json.dump(data, f, indent=2)
+            else:
+                yaml.safe_dump(data, f, sort_keys=False)
 
     def end(self) -> None:
         """Finalize the logging session and cleanup resources."""

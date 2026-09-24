@@ -79,6 +79,16 @@ pkill -f "src.train_kwp .*--run_name $RUN"
   `run_view_type=ViewType.ALL` and check `run.info.lifecycle_stage` when a run seems missing.
 - A supervisor restart opens a **new MLflow run with the same name**; metrics of a crashed and
   resumed training are split across those runs. Mention it when reporting.
+- What a kwp run logs:
+  - Metric keys use class names: `val/iou_knot`, `val/iou_wood`, `val/iou_pith`, `val/iou_background`
+    (runs before 2026-09-24 used `iou_2`, `iou_1`, `iou_3`, `iou_0`).
+  - `train/` has only `loss` and `lr`; train-split IoU is in `train_eval/` every `train_eval_interval`
+    epochs, the train/val gap is `train_eval/mean_iou_fg - val/mean_iou_fg`.
+  - Params: the resolved config (CLI overrides applied) plus `git_commit` / `git_dirty`, also as the
+    artifact `config.yaml`. euler has no `.git`: pass `CTLOG_GIT_COMMIT=<sha>` to the job.
+  - Images (*Artifacts → images*, step slider): `viz_num_frames` fixed, evenly spaced slices per split,
+    input | ground truth | prediction | error, every `viz_interval` epochs and the last one; test at
+    the end with the best head. Green cross = true pith, magenta = predicted. ~1 MB per epoch at 4 frames.
 
 Query runs (loads credentials without printing them):
 
@@ -95,9 +105,24 @@ EOF
 
 ### Logged models
 
-- `MlflowLogger.log_model` logs the seg head on every new best (5-epoch smoothed val fg IoU) as a
-  native MLflow PyTorch model in **pt2** (`torch.export`) format, exported from a CPU copy. It
-  appears in the run's *Logged models* and the experiment's *Models* tab.
+- A new best is the 5-epoch smoothed val fg IoU. On every new best the trainer:
+  - overwrites `checkpoint_path` (seg head only, as before);
+  - saves `<local_checkpoint_dir>/<run_name>/seg_head_epoch_<N>.pth` (`{"seg_head", "pith_head"}`
+    state dicts, ~134 MB for kwp v1) and keeps the newest `local_checkpoint_keep` (default 5);
+  - uploads to MLflow only if it beats the last uploaded best by `mlflow_model_min_improvement`
+    (default 0.005; 0 = every best). The log says `model uploaded` or `model upload skipped`.
+  After training, a best that was never uploaded is uploaded once (`Final best ... uploaded now`),
+  so MLflow always ends with the true best. The resume state keeps the last uploaded value, so a
+  restart does not re-upload; extending an already finished run compares against the last in-loop
+  upload and may upload once more.
+- Local copies are for recovery, not tracking. The default `/tmp/ctlog-checkpoints` is wiped on
+  reboot locally. On euler `/tmp` lives in the container: it survives crashes and container restarts
+  but not a recreated container, and other `jovyan` users can read it (fine for public weights).
+  Crash resume is separate: `<checkpoint>.resume.pth`, written every epoch when `resume: true`.
+- `MlflowLogger.log_model` logs the head as a native MLflow PyTorch model in **pt2**
+  (`torch.export`) format, exported from a CPU copy, at `step=<epoch>`. It appears in the run's
+  *Logged models* and the experiment's *Models* tab. (Models logged before 2026-09-24 all sit at
+  step 0.)
 - Load anywhere, then move:
   ```python
   model = mlflow.pytorch.load_model("models:/<model_id>")   # GraphModule on CPU
@@ -107,9 +132,10 @@ EOF
 - pt2 files load only with the **same or newer torch** than the exporter (both hosts: 2.7.0).
 - ONNX: `torch.onnx.export(model, (example,), dynamo=True, dynamic_shapes=({0: torch.export.Dim("batch", min=1)},))`
   (needs `onnxscript==0.2.7` with torch 2.7 in this env).
-- Size: ~217 MB per logged model (158 MB weights + 59 MB input-example JSON). DagsHub free tier
-  is 20 GB, and **deleting a model does not free storage** (DagsHub rejects artifact deletes).
-  Do not log extra models or artifacts by hand.
+- Size: ~158 MB per logged model for kwp v1 (the pt2 file only). The example is passed as a tensor,
+  so MLflow no longer stores input-example JSON (was +59 MB per model at 320 px, and it grows with
+  the patch count). DagsHub free tier is 20 GB, and **deleting a model does not free storage**
+  (DagsHub rejects artifact deletes). Do not log extra models or artifacts by hand.
 - End-to-end check of the whole path: `python -m eval.mlflow_e2e log` then
   `python -m eval.mlflow_e2e verify --run-id <id>` (logs to experiment `ct-log/dinov3`).
 

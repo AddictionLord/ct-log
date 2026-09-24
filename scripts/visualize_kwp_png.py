@@ -15,43 +15,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
+from src.dataset.kwp_mask import KwpMaskBuilder
 from src.segmentation_head import create_dinov3_segmentor
 from src.train_kwp import extract_features, make_transform
 from src.utils.per_class_iou import PerClassIoU
+from src.utils.prediction_panels import colorize, error_overlay
 import torch
-
-CLASS_COLORS = np.array([[0, 0, 0], [140, 100, 60], [230, 40, 40], [0, 200, 255]], dtype=np.uint8)
-
-
-def colorize(mask: np.ndarray) -> np.ndarray:
-    """Map class ids to RGB.
-
-    Args:
-        mask: [H, W] class-id array.
-
-    Returns:
-        np.ndarray: [H, W, 3] uint8 image.
-    """
-    return CLASS_COLORS[mask]
-
-
-def error_overlay(pred: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """Colour agreement and error types.
-
-    Args:
-        pred: [H, W] predicted class ids.
-        target: [H, W] ground-truth class ids.
-
-    Returns:
-        np.ndarray: [H, W, 3] uint8 image.
-    """
-    out = np.zeros((*pred.shape, 3), dtype=np.uint8)
-    pf, tf = pred > 0, target > 0
-    out[pf & tf & (pred == target)] = (0, 190, 0)
-    out[pf & tf & (pred != target)] = (255, 210, 0)
-    out[pf & ~tf] = (255, 0, 0)
-    out[~pf & tf] = (0, 90, 255)
-    return out
 
 
 def main() -> None:
@@ -107,7 +76,7 @@ def main() -> None:
             prediction = seg_head(features).argmax(1).squeeze(0).cpu().numpy()
         target = sample["mask"].numpy()
 
-        iou = PerClassIoU(num_classes=config.num_classes + 1)
+        iou = PerClassIoU(num_classes=config.num_classes + 1, class_names=KwpMaskBuilder.class_names())
         iou.update(torch.from_numpy(prediction).unsqueeze(0), torch.from_numpy(target).unsqueeze(0))
         scores = iou.compute()
 
@@ -115,7 +84,7 @@ def main() -> None:
         panels = [
             (np.stack([centre] * 3, -1), Path(sample["path"]).name),
             (colorize(target), "ground truth"),
-            (colorize(prediction), f"pred knot IoU {scores.get('iou_2', 0):.2f}"),
+            (colorize(prediction), f"pred knot IoU {scores['iou_knot']:.2f}"),
             (error_overlay(prediction, target), f"error  fg {scores['mean_iou_fg']:.2f}"),
         ]
         for col, (panel, title) in enumerate(panels):

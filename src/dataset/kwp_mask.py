@@ -26,6 +26,15 @@ class KwpMaskBuilder:
     }
     draw_order: ClassVar[List[str]] = ["wood", "knot", "pith"]
 
+    @classmethod
+    def class_names(cls) -> List[str]:
+        """Class names ordered by class id.
+
+        Returns:
+            List[str]: Name of each class, index = class id.
+        """
+        return sorted(cls.class_to_id, key=cls.class_to_id.get)
+
     def __init__(self, pith_radius: int = 3) -> None:
         self.pith_radius = pith_radius
 

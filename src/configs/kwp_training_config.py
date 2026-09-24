@@ -44,6 +44,11 @@ class KwpTrainingConfig(BaseModel):
     resume: bool = False
     log_interval: int = 50
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/kwp_seg_head.pth")
+    local_checkpoint_dir: Path = Path("/tmp/ctlog-checkpoints")
+    local_checkpoint_keep: int = Field(5, ge=1)
+    mlflow_model_min_improvement: float = Field(0.005, ge=0)
+    viz_interval: int = Field(5, ge=0)
+    viz_num_frames: int = Field(4, ge=1)
 
     use_local_logger: bool = True
     local_log_dir: Path = Path("logs")

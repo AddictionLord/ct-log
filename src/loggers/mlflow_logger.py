@@ -1,7 +1,7 @@
 import copy
 import math
 import os
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -88,18 +88,25 @@ class MlflowLogger(ILogger):
         except Exception as error:  # noqa: BLE001
             print("MLflow param logging failed (%s: %s)" % (type(error).__name__, error))
 
-    def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
+    def log_model(
+        self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None
+    ) -> None:
         """Log a trained module as a native MLflow PyTorch model in pt2 (torch.export) format.
 
         A CPU copy is exported, so the model loads on any machine via ``mlflow.pytorch.load_model``
         and moves with ``.to(device)``. The batch dimension of the signature is dynamic; all other
         dimensions are fixed to the example's shape. Training checkpoints stay local.
 
+        The example is passed as a tensor, not an array: MLflow then only uses it to trace the
+        graph and does not store it as input_example.json / serving_input_example.json, which
+        would add ~58 MB per model at 320 px and grow with the patch count.
+
         Args:
             model: PyTorch module to log.
             name: Name of the logged model.
             input_example: [B, ...] example input with B > 1 (a size-1 batch would be exported as
                 static); required by the pt2 format.
+            step: Epoch the model belongs to, linking it to that step's metrics in the UI.
         """
         if not self._enabled:
             return
@@ -119,11 +126,41 @@ class MlflowLogger(ILogger):
                 _cpu_copy(model),
                 name=name,
                 serialization_format="pt2",
-                input_example=example.numpy(),
+                input_example=example,
                 signature=signature,
+                step=step or 0,
             )
         except Exception as error:  # noqa: BLE001
             print("MLflow model logging skipped for %s (%s: %s)" % (name, type(error).__name__, error))
+
+    def log_image(self, image: np.ndarray, key: str, step: int) -> None:
+        """Log an image series entry; the MLflow UI shows it with a step slider.
+
+        Args:
+            image: [H, W, 3] uint8 RGB image.
+            key: Stable name of the image series.
+            step: Epoch the image belongs to.
+        """
+        if not self._enabled:
+            return
+        try:
+            self._mlflow.log_image(image, key=key, step=step)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow image logging failed for %s at step %d (%s: %s)" % (key, step, type(error).__name__, error))
+
+    def log_dict(self, data: Dict[str, Any], artifact_file: str) -> None:
+        """Log a dictionary as a YAML or JSON artifact.
+
+        Args:
+            data: JSON-serializable dictionary.
+            artifact_file: Relative artifact file name, e.g. "config.yaml".
+        """
+        if not self._enabled:
+            return
+        try:
+            self._mlflow.log_dict(data, artifact_file)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow dict logging failed for %s (%s: %s)" % (artifact_file, type(error).__name__, error))
 
     def end(self) -> None:
         """Finalize the logging session and cleanup resources."""
