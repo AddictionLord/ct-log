@@ -16,6 +16,7 @@ from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
 from src.utils.checkpoints import save_best_copy
+from src.utils.class_balance import effective_number_weights, inverse_frequency_weights
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
 from src.utils.prediction_panels import render_panel
@@ -83,10 +84,45 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
     return loaders
 
 
+def build_class_weights(config: KwpTrainingConfig, device: torch.device) -> torch.Tensor | None:
+    """Build per-class loss weights from config.class_weighting, or None to disable weighting.
+
+    Args:
+        config: Training configuration; class_pixel_counts must be set when class_weighting
+            is not "none".
+        device: Device the weights are moved to.
+
+    Returns:
+        torch.Tensor | None: [num_classes + 1] weights, or None when class_weighting is "none".
+
+    Raises:
+        ValueError: If class_weighting is not "none" but class_pixel_counts is unset, or its
+            length does not match num_classes + 1.
+    """
+    if config.class_weighting == "none":
+        return None
+    if config.class_pixel_counts is None:
+        msg = f"class_weighting={config.class_weighting!r} requires class_pixel_counts to be set"
+        raise ValueError(msg)
+    if len(config.class_pixel_counts) != config.num_classes + 1:
+        msg = (
+            f"class_pixel_counts has {len(config.class_pixel_counts)} entries, "
+            f"expected {config.num_classes + 1} (num_classes + background)"
+        )
+        raise ValueError(msg)
+
+    if config.class_weighting == "effective_number":
+        weights = effective_number_weights(config.class_pixel_counts, beta=config.class_weight_beta)
+    else:
+        weights = inverse_frequency_weights(config.class_pixel_counts, power=config.class_weight_power)
+    return weights.to(device)
+
+
 def compute_loss(
     outputs: torch.Tensor,
     masks: torch.Tensor,
     config: KwpTrainingConfig,
+    class_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute the combined focal + Tversky loss.
 
@@ -94,11 +130,14 @@ def compute_loss(
         outputs: [B, C, H, W] logits.
         masks: [B, H, W] int64 class ids.
         config: Training configuration.
+        class_weights: Optional [num_classes + 1] per-class weights, from build_class_weights.
 
     Returns:
         torch.Tensor: Scalar loss.
     """
-    distribution_loss = multiclass_focal_loss(outputs, masks, config.focal_alpha, config.focal_gamma)
+    distribution_loss = multiclass_focal_loss(
+        outputs, masks, config.focal_alpha, config.focal_gamma, class_weights=class_weights
+    )
 
     masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes + 1).permute(0, 3, 1, 2)
     district_loss = multiclass_tversky_loss(
@@ -107,6 +146,7 @@ def compute_loss(
         alpha=config.tversky_alpha,
         beta=config.tversky_beta,
         ignore_background=config.ignore_background_in_tversky,
+        class_weights=class_weights,
     )
 
     return config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
@@ -163,6 +203,7 @@ def evaluate(
     device: torch.device,
     config: KwpTrainingConfig,
     pith_head: torch.nn.Module | None = None,
+    class_weights: torch.Tensor | None = None,
 ) -> tuple[float, dict[str, float]]:
     """Evaluate on a dataloader, returning mean loss and per-class IoU.
 
@@ -174,6 +215,8 @@ def evaluate(
         device: Compute device.
         config: Training configuration.
         pith_head: Optional pith coordinate regression head.
+        class_weights: Optional per-class loss weights; matches training so eval loss stays
+            comparable across epochs. Does not affect IoU, which is unweighted either way.
 
     Returns:
         tuple[float, dict[str, float]]: mean loss and metric dict. When a pith
@@ -198,7 +241,7 @@ def evaluate(
         if pith_head is not None:
             pith_errors.extend(pith_pixel_errors(pith_head(features), batch["pith_xy"].to(device), config))
 
-        losses.append(compute_loss(outputs, masks, config).item())
+        losses.append(compute_loss(outputs, masks, config, class_weights).item())
         iou.update(outputs.argmax(dim=1).cpu(), masks.cpu())
 
     metrics = iou.compute()
@@ -339,6 +382,9 @@ def main() -> None:
         trainable += list(pith_head.parameters())
 
     transform = make_transform()
+    class_weights = build_class_weights(config, device)
+    if class_weights is not None:
+        print(f"Class weights ({config.class_weighting}): {class_weights.tolist()}")
     optimizer = torch.optim.Adam(trainable, lr=config.lr)
 
     scheduler = None
@@ -424,7 +470,7 @@ def main() -> None:
                 features = extract_features(model, images, config.n_layers)
 
             outputs = seg_head(features)
-            loss = compute_loss(outputs, masks, config)
+            loss = compute_loss(outputs, masks, config, class_weights)
             if pith_head is not None:
                 loss = loss + config.pith_loss_weight * pith_loss(pith_head(features), batch["pith_xy"].to(device))
             loss.backward()
@@ -436,7 +482,9 @@ def main() -> None:
 
         train_loss = float(torch.tensor(losses).mean().item())
 
-        val_loss, val_metrics = evaluate(model, seg_head, loaders["val"], transform, device, config, pith_head)
+        val_loss, val_metrics = evaluate(
+            model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights
+        )
         fg_iou = val_metrics["mean_iou_fg"]
 
         # Train IoU is only computed by the periodic train-eval below; NaN keeps the CSV columns
@@ -464,7 +512,7 @@ def main() -> None:
         # bias/variance signal (both low => underfit, train >> val => overfit).
         if config.train_eval_interval and epoch_idx % config.train_eval_interval == 0:
             train_eval_loss, train_eval_metrics = evaluate(
-                model, seg_head, loaders["train"], transform, device, config, pith_head
+                model, seg_head, loaders["train"], transform, device, config, pith_head, class_weights
             )
             tracker.add(
                 epoch_idx, "train_eval", train_eval_loss, train_eval_metrics["mean_iou_fg"], **train_eval_metrics
@@ -567,7 +615,9 @@ def main() -> None:
     if "test" in loaders:
         if best_epoch is None:
             print("No checkpoint written; testing final-epoch weights instead.")
-        test_loss, test_metrics = evaluate(model, seg_head, loaders["test"], transform, device, config, pith_head)
+        test_loss, test_metrics = evaluate(
+            model, seg_head, loaders["test"], transform, device, config, pith_head, class_weights
+        )
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")
         tracker.add(config.num_epochs, "test", test_loss, test_metrics["mean_iou_fg"], **test_metrics)
