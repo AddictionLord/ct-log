@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -64,12 +64,13 @@ class LocalLogger(ILogger):
         with open(params_path, "w") as f:
             f.writelines(f"{key}: {value}\n" for key, value in params.items())
 
-    def log_model(self, model: Any, name: str) -> None:
+    def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
         """Log a trained model.
 
         Args:
             model: Model to log (typically a PyTorch model state dict or module).
             name: Name or identifier for the model.
+            input_example: Unused; accepted for interface compatibility.
         """
         model_path = self.models_dir / f"{name}.pth"
 

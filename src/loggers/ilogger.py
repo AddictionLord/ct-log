@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
+
+import torch
 
 from src.utils.metrics import EpochMetrics
 
@@ -28,12 +30,13 @@ class ILogger(ABC):
         """
 
     @abstractmethod
-    def log_model(self, model: Any, name: str) -> None:
+    def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
         """Log a trained model.
 
         Args:
             model: Model to log (typically a PyTorch model state dict or module).
             name: Name or identifier for the model.
+            input_example: [B, ...] example input for loggers that export a traced graph.
         """
 
     @abstractmethod

@@ -190,7 +190,7 @@ def main() -> None:
             continue
 
         torch.save(seg_head.state_dict(), config.checkpoint_path)
-        logger.log_model(seg_head, f"seg_head_epoch_{epoch_idx}")
+        logger.log_model(seg_head, f"seg_head_epoch_{epoch_idx}", seg_head.example_input())
         criterion = val_stats[1]
 
         test_stats = evaluate(model, seg_head, loaders["test"], device, config)

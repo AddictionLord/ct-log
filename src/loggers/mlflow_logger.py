@@ -1,5 +1,8 @@
-from typing import Any
+import copy
+import os
+from typing import Any, Optional
 
+import numpy as np
 import torch
 
 from src.loggers.ilogger import ILogger
@@ -76,27 +79,53 @@ class MlflowLogger(ILogger):
             return
         self._mlflow.log_params(params)
 
-    def log_model(self, model: Any, name: str) -> None:
-        """Log a trained model.
+    def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
+        """Log a trained module as a native MLflow PyTorch model in pt2 (torch.export) format.
+
+        A CPU copy is exported, so the model loads on any machine via ``mlflow.pytorch.load_model``
+        and moves with ``.to(device)``. The batch dimension of the signature is dynamic; all other
+        dimensions are fixed to the example's shape. Training checkpoints stay local.
 
         Args:
-            model: Model to log (typically a PyTorch model or state dict).
-            name: Name or identifier for the model.
+            model: PyTorch module to log.
+            name: Name of the logged model.
+            input_example: [B, ...] example input with B > 1 (a size-1 batch would be exported as
+                static); required by the pt2 format.
         """
         if not self._enabled:
             return
+        if not isinstance(model, torch.nn.Module) or input_example is None:
+            print("MLflow model logging skipped for %s (needs an nn.Module and an input_example)" % name)
+            return
 
+        os.environ.setdefault("MLFLOW_DEFAULT_PREDICTION_DEVICE", "cpu")
         try:
-            if isinstance(model, torch.nn.Module):
-                self._mlflow.pytorch.log_model(model, name)
-            elif isinstance(model, dict):
-                self._mlflow.pytorch.log_state_dict(model, name)
-            else:
-                self._mlflow.log_artifact(model, name)
+            example = input_example.detach().cpu()
+            signature = self._mlflow.models.ModelSignature(
+                inputs=self._mlflow.types.Schema(
+                    [self._mlflow.types.TensorSpec(np.dtype(np.float32), (-1, *example.shape[1:]))]
+                )
+            )
+            self._mlflow.pytorch.log_model(
+                _cpu_copy(model),
+                name=name,
+                serialization_format="pt2",
+                input_example=example.numpy(),
+                signature=signature,
+            )
         except Exception as error:  # noqa: BLE001
-            print("MLflow model logging skipped (%s: %s)" % (type(error).__name__, error))
+            print("MLflow model logging skipped for %s (%s: %s)" % (name, type(error).__name__, error))
 
     def end(self) -> None:
         """Finalize the logging session and cleanup resources."""
         if self._enabled:
             self._mlflow.end_run()
+
+
+def _cpu_copy(model: torch.nn.Module) -> torch.nn.Module:
+    device = next(model.parameters()).device
+    model.cpu()
+    try:
+        return copy.deepcopy(model).eval()
+    finally:
+        model.to(device)

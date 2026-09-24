@@ -17,6 +17,7 @@ class SimpleSegmentationHead(nn.Module):
         """
         super().__init__()
 
+        self.feature_dim = feature_dim
         self.patch_size = 16
         self.feature_map_size = input_size // self.patch_size  # 14 for 224x224
 
@@ -54,6 +55,18 @@ class SimpleSegmentationHead(nn.Module):
         segmentation_logits = self.decoder(spatial_features)
 
         return segmentation_logits
+
+    def example_input(self, batch_size: int = 2) -> torch.Tensor:
+        """Zero patch features matching the forward input, for tracing and export.
+
+        Args:
+            batch_size: Batch size of the example; keep > 1 so export treats it as dynamic.
+
+        Returns:
+            torch.Tensor: [B, num_patches, feature_dim] zeros on the head's device.
+        """
+        device = next(self.parameters()).device
+        return torch.zeros(batch_size, self.feature_map_size**2, self.feature_dim, device=device)
 
 
 class PithRegressionHead(nn.Module):
