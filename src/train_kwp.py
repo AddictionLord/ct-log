@@ -1,6 +1,8 @@
 import argparse
+from dataclasses import asdict
 import os
 from pathlib import Path
+import time
 from typing import Dict, List, Optional
 
 import torch
@@ -18,6 +20,7 @@ from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
 from src.utils.prediction_panels import render_panel
 from src.utils.provenance import git_provenance
+from src.utils.train_info import TrainInfo
 
 NATIVE_SLICE_SIZE = 778
 
@@ -353,6 +356,12 @@ def main() -> None:
     fg_history: List[float] = []
     start_epoch = 0
     best_copy_dir = config.local_checkpoint_dir / (config.mlflow_run_name or config.checkpoint_path.stem)
+    info = TrainInfo(
+        run_name=config.mlflow_run_name or config.checkpoint_path.stem,
+        num_epochs=config.num_epochs,
+        checkpoint_path=str(config.checkpoint_path),
+        local_best_copies=str(best_copy_dir),
+    )
 
     # Resume state lives beside the best-model checkpoint. Without it a crash
     # restart would silently begin at epoch 0 and corrupt the plateau reading.
@@ -387,9 +396,18 @@ def main() -> None:
         fg_history = state["fg_history"]
         best_epoch = state.get("best_epoch")
         last_uploaded_smoothed = state.get("last_uploaded_smoothed", best_smoothed)
+        if state.get("train_info") is not None:
+            info = TrainInfo(**state["train_info"])
+            info.num_epochs = config.num_epochs
+            info.status = "running"
+        else:
+            info.best_epoch = best_epoch
+            info.best_smoothed_fg = best_smoothed if best_epoch is not None else None
+        info.resumed_from_epoch = start_epoch
         print(f"Resumed from {resume_path} at epoch {start_epoch}")
 
     for epoch_idx in range(start_epoch, config.num_epochs):
+        epoch_start = time.monotonic()
         model.eval()
         seg_head.train()
         if pith_head is not None:
@@ -430,7 +448,11 @@ def main() -> None:
         logger.log_metrics(tracker.get(epoch_idx, "val")[-1])
         fg_history.append(fg_iou)
         smoothed = float(sum(fg_history[-5:]) / len(fg_history[-5:]))
+        if fg_iou > best_fg_iou:
+            info.best_raw_epoch = epoch_idx
+            info.best_raw_val_fg = fg_iou
         best_fg_iou = max(best_fg_iou, fg_iou)
+        info.last_val = {"loss": val_loss, **val_metrics, "smoothed_fg": smoothed}
 
         iou_str = " ".join(f"{k}={v:.3f}" for k, v in val_metrics.items())
         print(
@@ -486,15 +508,22 @@ def main() -> None:
 
             # Each logged model costs ~160 MB of DagsHub storage that deletes never free, so
             # only upload bests that moved meaningfully; the true best is uploaded after training.
+            info.best_epoch = epoch_idx
+            info.best_smoothed_fg = smoothed
+            info.best_epoch_val_fg = fg_iou
             if smoothed >= last_uploaded_smoothed + config.mlflow_model_min_improvement:
                 logger.log_model(seg_head, f"kwp_seg_head_epoch_{epoch_idx}", seg_head.example_input(), step=epoch_idx)
                 last_uploaded_smoothed = smoothed
+                info.uploaded_models.append({"epoch": epoch_idx, "smoothed_fg": round(smoothed, 4)})
                 print(f"Epoch {epoch_idx}, model uploaded (smoothed_fg={smoothed:.4f})")
             else:
                 print(
                     f"Epoch {epoch_idx}, model upload skipped: smoothed_fg={smoothed:.4f} < last uploaded "
                     f"{last_uploaded_smoothed:.4f} + {config.mlflow_model_min_improvement}"
                 )
+
+        info.current_epoch = epoch_idx
+        info.last_epoch_minutes = round((time.monotonic() - epoch_start) / 60, 2)
 
         if config.resume:
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -514,10 +543,13 @@ def main() -> None:
                     "best_epoch": best_epoch,
                     "last_uploaded_smoothed": last_uploaded_smoothed,
                     "fg_history": fg_history,
+                    "train_info": asdict(info),
                 },
                 tmp_path,
             )
             os.replace(tmp_path, resume_path)
+
+        logger.log_dict(info.to_dict(), "train_info.yaml")
 
     print(f"Best foreground mean IoU: {best_fg_iou:.4f}")
     print(f"Best smoothed (5-epoch) foreground mean IoU: {best_smoothed:.4f}")
@@ -529,6 +561,7 @@ def main() -> None:
         if best_smoothed > last_uploaded_smoothed:
             logger.log_model(seg_head, f"kwp_seg_head_epoch_{best_epoch}", seg_head.example_input(), step=best_epoch)
             last_uploaded_smoothed = best_smoothed
+            info.uploaded_models.append({"epoch": best_epoch, "smoothed_fg": round(best_smoothed, 4)})
             print(f"Final best (epoch {best_epoch}, smoothed_fg={best_smoothed:.4f}) was not uploaded; uploaded now")
 
     if "test" in loaders:
@@ -538,6 +571,7 @@ def main() -> None:
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")
         tracker.add(config.num_epochs, "test", test_loss, test_metrics["mean_iou_fg"], **test_metrics)
+        info.test = {"loss": test_loss, **test_metrics}
         logger.log_metrics(tracker.get(config.num_epochs, "test")[-1])
         if config.viz_interval:
             log_prediction_panels(
@@ -553,6 +587,8 @@ def main() -> None:
                 logger,
             )
 
+    info.status = "finished"
+    logger.log_dict(info.to_dict(), "train_info.yaml")
     logger.end()
 
 

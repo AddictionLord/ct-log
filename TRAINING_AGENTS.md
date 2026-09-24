@@ -84,6 +84,11 @@ pkill -f "src.train_kwp .*--run_name $RUN"
     (runs before 2026-09-24 used `iou_2`, `iou_1`, `iou_3`, `iou_0`).
   - `train/` has only `loss` and `lr`; train-split IoU is in `train_eval/` every `train_eval_interval`
     epochs, the train/val gap is `train_eval/mean_iou_fg - val/mean_iou_fg`.
+  - `train_info.yaml` (artifact root and `local_log_dir`), rewritten every epoch and at the end:
+    `status` (running/finished), current epoch, minutes per epoch and remaining estimate, best
+    smoothed epoch, best raw epoch, last val metrics, uploaded models, checkpoint paths, test
+    metrics. It is kept in the resume state, so a resumed run keeps its history. Quickest check of a
+    live run without parsing `run.log`.
   - Params: the resolved config (CLI overrides applied) plus `git_commit` / `git_dirty`, also as the
     artifact `config.yaml`. euler has no `.git`: pass `CTLOG_GIT_COMMIT=<sha>` to the job.
   - Prediction panels, plain PNGs at the artifact root: `train/`, `val/`, `test/`, one folder per
