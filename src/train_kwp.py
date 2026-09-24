@@ -358,8 +358,10 @@ def main() -> None:
         val_loss, val_metrics = evaluate(model, seg_head, loaders["val"], transform, device, config, pith_head)
         fg_iou = val_metrics["mean_iou_fg"]
 
-        empty_metrics = {key: 0.0 for key in val_metrics}
-        tracker.add(epoch_idx, "train", train_loss, 0.0, **empty_metrics)
+        # Train IoU is only computed by the periodic train-eval below; NaN keeps the CSV columns
+        # aligned and is skipped by MLflow, where zeros would read as a collapsed model.
+        not_computed = {key: float("nan") for key in val_metrics}
+        tracker.add(epoch_idx, "train", train_loss, float("nan"), **not_computed)
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)
         logger.log_metrics(tracker.get(epoch_idx, "val")[-1])
@@ -379,6 +381,10 @@ def main() -> None:
             train_eval_loss, train_eval_metrics = evaluate(
                 model, seg_head, loaders["train"], transform, device, config, pith_head
             )
+            tracker.add(
+                epoch_idx, "train_eval", train_eval_loss, train_eval_metrics["mean_iou_fg"], **train_eval_metrics
+            )
+            logger.log_metrics(tracker.get(epoch_idx, "train_eval")[-1])
             print(
                 f"Epoch {epoch_idx}, TRAIN-EVAL loss {train_eval_loss:.4f} "
                 f"fg={train_eval_metrics['mean_iou_fg']:.4f} "

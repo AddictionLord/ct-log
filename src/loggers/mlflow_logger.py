@@ -1,4 +1,5 @@
 import copy
+import math
 import os
 from typing import Any, Optional
 
@@ -66,6 +67,9 @@ class MlflowLogger(ILogger):
         values.update(
             {f"{prefix}/{key}": value for key, value in metrics.extra.items() if isinstance(value, (int, float))}
         )
+        values = {key: value for key, value in values.items() if math.isfinite(value)}
+        if not values:
+            return
         try:
             self._mlflow.log_metrics(values, step=metrics.epoch)
         except Exception as error:  # noqa: BLE001
