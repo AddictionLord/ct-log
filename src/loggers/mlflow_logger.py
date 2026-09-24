@@ -62,12 +62,14 @@ class MlflowLogger(ILogger):
             return
 
         prefix = f"{metrics.split}"
-        self._mlflow.log_metric(f"{prefix}/loss", metrics.loss, step=metrics.epoch)
-        self._mlflow.log_metric(f"{prefix}/mean_iou", metrics.mean_iou, step=metrics.epoch)
-
-        for key, value in metrics.extra.items():
-            if isinstance(value, (int, float)):
-                self._mlflow.log_metric(f"{prefix}/{key}", value, step=metrics.epoch)
+        values = {f"{prefix}/loss": metrics.loss, f"{prefix}/mean_iou": metrics.mean_iou}
+        values.update(
+            {f"{prefix}/{key}": value for key, value in metrics.extra.items() if isinstance(value, (int, float))}
+        )
+        try:
+            self._mlflow.log_metrics(values, step=metrics.epoch)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow metric logging failed at epoch %d (%s: %s)" % (metrics.epoch, type(error).__name__, error))
 
     def log_params(self, params: dict[str, Any]) -> None:
         """Log hyperparameters or configuration.
@@ -77,7 +79,10 @@ class MlflowLogger(ILogger):
         """
         if not self._enabled:
             return
-        self._mlflow.log_params(params)
+        try:
+            self._mlflow.log_params(params)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow param logging failed (%s: %s)" % (type(error).__name__, error))
 
     def log_model(self, model: Any, name: str, input_example: Optional[torch.Tensor] = None) -> None:
         """Log a trained module as a native MLflow PyTorch model in pt2 (torch.export) format.
