@@ -223,7 +223,8 @@ def log_prediction_panels(
     """Log input | ground truth | prediction | error panels for fixed, evenly spaced slices.
 
     The same slices are used at every step, so the MLflow image slider shows how one slice
-    evolves over training.
+    evolves over training. Each slice is the centre of one of viz_num_frames equal bins, which
+    skips the first and last slice of the split (log ends, least informative).
 
     Args:
         model: Frozen DINOv3 backbone.
@@ -242,7 +243,9 @@ def log_prediction_panels(
     if pith_head is not None:
         pith_head.eval()
 
-    indices = torch.linspace(0, len(dataset) - 1, config.viz_num_frames).round().long().unique().tolist()
+    indices = (
+        ((torch.arange(config.viz_num_frames) + 0.5) * len(dataset) / config.viz_num_frames).long().unique().tolist()
+    )
     samples = [dataset[index] for index in indices]
     images = torch.stack([sample["image"] for sample in samples])
     features = extract_features(model, transform(images.to(device)), config.n_layers)
