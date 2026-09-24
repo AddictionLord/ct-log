@@ -89,16 +89,16 @@ class LocalLogger(ILogger):
             torch.save(model, model_path)
 
     def log_image(self, image: np.ndarray, key: str, step: int) -> None:
-        """Save an image as PNG under <log_dir>/images/.
+        """Save an image as <log_dir>/<key>/step_<NNNN>.png, mirroring the MLflow artifact layout.
 
         Args:
             image: [H, W, 3] uint8 RGB image.
-            key: Stable name of the image series; slashes become double underscores.
+            key: Stable name of the image series, e.g. "val/log4_page_104".
             step: Epoch the image belongs to.
         """
-        images_dir = self.log_dir / "images"
-        images_dir.mkdir(parents=True, exist_ok=True)
-        Image.fromarray(image).save(images_dir / f"{key.replace('/', '__')}_step{step:04d}.png")
+        image_dir = self.log_dir / key
+        image_dir.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(image).save(image_dir / f"step_{step:04d}.png")
 
     def log_dict(self, data: Dict[str, Any], artifact_file: str) -> None:
         """Write a dictionary to <log_dir>/<artifact_file> as YAML or JSON.

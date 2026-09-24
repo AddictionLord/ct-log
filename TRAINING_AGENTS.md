@@ -86,9 +86,11 @@ pkill -f "src.train_kwp .*--run_name $RUN"
     epochs, the train/val gap is `train_eval/mean_iou_fg - val/mean_iou_fg`.
   - Params: the resolved config (CLI overrides applied) plus `git_commit` / `git_dirty`, also as the
     artifact `config.yaml`. euler has no `.git`: pass `CTLOG_GIT_COMMIT=<sha>` to the job.
-  - Images (*Artifacts → images*, step slider): `viz_num_frames` fixed, evenly spaced slices per split,
-    input | ground truth | prediction | error, every `viz_interval` epochs and the last one; test at
-    the end with the best head. Green cross = true pith, magenta = predicted. ~1 MB per epoch at 4 frames.
+  - Prediction panels, plain PNGs at the artifact root: `train/`, `val/`, `test/`, one folder per
+    slice (`val/log4_page_104/step_0005.png`). `viz_num_frames` fixed slices per split (bin centres,
+    no log ends): input | ground truth | prediction | error, every `viz_interval` epochs and the last
+    one; test once at the end with the best head. Green cross = true pith, magenta = predicted.
+    ~30 KB per panel. The local logger writes the same tree under `local_log_dir`.
 
 Query runs (loads credentials without printing them):
 

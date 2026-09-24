@@ -134,17 +134,22 @@ class MlflowLogger(ILogger):
             print("MLflow model logging skipped for %s (%s: %s)" % (name, type(error).__name__, error))
 
     def log_image(self, image: np.ndarray, key: str, step: int) -> None:
-        """Log an image series entry; the MLflow UI shows it with a step slider.
+        """Log an image as the plain PNG artifact <key>/step_<NNNN>.png.
+
+        The key/step form of ``mlflow.log_image`` is not used: it adds a .webp thumbnail per image
+        for a step-slider widget that the DagsHub UI does not render, and hides the step in
+        long generated file names. A key's first part (the split) becomes a top-level artifact folder,
+        and one folder per slice lists its epochs in order.
 
         Args:
             image: [H, W, 3] uint8 RGB image.
-            key: Stable name of the image series.
+            key: Stable name of the image series, e.g. "val/log4_page_104".
             step: Epoch the image belongs to.
         """
         if not self._enabled:
             return
         try:
-            self._mlflow.log_image(image, key=key, step=step)
+            self._mlflow.log_image(image, artifact_file=f"{key}/step_{step:04d}.png")
         except Exception as error:  # noqa: BLE001
             print("MLflow image logging failed for %s at step %d (%s: %s)" % (key, step, type(error).__name__, error))
 
