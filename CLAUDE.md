@@ -87,3 +87,9 @@ boundary pixels (intensity < 60) — reduces bark overshoot to ~374px with
 minimal wood loss. No model needed, ~11 it/s.
 
 Phase2 auto annotations use the peel detector for wood.
+
+## Training runs and experiment tracking
+
+Agents that launch, monitor or report training (locally or on euler.mendelu.cz) must follow
+`TRAINING_AGENTS.md`. MLflow tracking is on DagsHub
+(`https://dagshub.com/AddictionLord/ct-log.mlflow`, public); credentials live in `.env`.

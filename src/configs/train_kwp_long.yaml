@@ -71,4 +71,4 @@ local_log_dir: logs/kwp_long
 use_mlflow: true
 mlflow_experiment_name: ct-log-kwp-long
 mlflow_run_name: null
-mlflow_tracking_uri: http://localhost:5000
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
