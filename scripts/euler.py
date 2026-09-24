@@ -199,13 +199,17 @@ print("{MARK}" + json.dumps(dict(abort=_abort, dir=str(_d))))
 
 
 def cmd_put(local, remote):
-    data = base64.b64encode(Path(local).read_bytes()).decode()
-    api(
+    raw = Path(local).read_bytes()
+    data = base64.b64encode(raw).decode()
+    r = api(
         "PUT",
         f"contents/{remote}",
         json={"type": "file", "format": "base64", "content": data},
     )
-    print(f"nahráno: {remote}")
+    size = (r or {}).get("size")
+    if size is not None and size != len(raw):
+        die(f"nahráno jen {size} z {len(raw)} B: {remote}")
+    print(f"nahráno: {remote} ({len(raw)} B)")
 
 
 def cmd_get(remote, local):

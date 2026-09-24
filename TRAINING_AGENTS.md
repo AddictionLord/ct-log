@@ -22,7 +22,7 @@ before starting anything. When in doubt, ask the user instead of guessing.
 | Host | GPU | Status |
 |---|---|---|
 | Local machine (this repo) | GTX 1650, 4 GB | **Default.** conda env `ct-log`, torch 2.7.0+cu128. Data in `/mnt/D/datasets/ct_log`, weights in `/mnt/D/models`. |
-| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Reachable but **not provisioned** for training (no repo, data, DINOv3 weights or code). Do not set it up without the user's OK — see [euler](#euler-remote-gpu). |
+| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Provisioned 2026-09-24 under `~/ctlog-eval/` (copied working tree, data, DINOv3 weights). Jobs run via `scripts/euler.py bg` in `~/jobs/<name>/`. Use `num_workers=0`, batch 8 fits. See [euler](#euler-remote-gpu). |
 
 ## Launching (local)
 
@@ -55,6 +55,7 @@ nohup bash scripts/supervise_kwp.sh src/configs/train_kwp_v1.yaml "$RUN" "logs/$
 | Finished | `grep "Best foreground mean IoU" logs/<run>/run.log` |
 | MLflow broken | `grep "MLflow logging disabled\|MLflow model logging skipped" logs/<run>/run.log` — training continues, but nothing reaches DagsHub; tell the user |
 | Process alive | `pgrep -af "src.train_kwp"` |
+| MLflow run id | Not in the log until the run ends (`View run ... runs/<id>`). While running: `MlflowClient().search_runs([exp_id], filter_string="attributes.run_name = '<run>'")` |
 
 Stop a run — supervisor first, otherwise it restarts the trainer:
 
@@ -72,6 +73,10 @@ pkill -f "src.train_kwp .*--run_name $RUN"
 - The user's shell also exports `MLFLOW_TRACKING_URI` for an unrelated work server. Always set
   the URI explicitly (configs do); never rely on the env var.
 - One experiment per config (`mlflow_experiment_name`), e.g. `ct-log-kwp-v1`.
+- **Never delete a run in the DagsHub UI while its training is still running.** Every later write
+  is rejected with `INVALID_PARAMETER_VALUE` ("MLflow metric logging failed" in `run.log`; training
+  continues, metrics are lost). Deleted runs are hidden from `search_runs`; pass
+  `run_view_type=ViewType.ALL` and check `run.info.lifecycle_stage` when a run seems missing.
 - A supervisor restart opens a **new MLflow run with the same name**; metrics of a crashed and
   resumed training are split across those runs. Mention it when reporting.
 
@@ -118,10 +123,14 @@ eval "$(grep '^export EULER_' ~/.bashrc)"      # ~/.bashrc returns early in non-
 uv run --no-project scripts/euler.py exec "nvidia-smi; df -h ~"
 uv run --no-project scripts/euler.py bg <name> "<long command>" --min-free-mb 8000   # ~/jobs/<name>/{log,exit,pid}
 uv run --no-project scripts/euler.py exec "tail -n 20 ~/jobs/<name>/log"
-uv run --no-project scripts/euler.py put <local> <remote> / get <remote> <local>
+uv run --no-project scripts/euler.py put <local> <remote> / get <remote> <local>   # base64 via REST
 uv run --no-project scripts/euler.py close      # delete the kernel when done
 ```
 
+- `put` is reliable up to ~150 MB per file. Split bigger files (`split -b 150M`), upload the
+  parts, `cat` them together on euler and compare `md5sum` on both sides. `put` checks the
+  uploaded size and exits non-zero on failure. Don't pipe it into `tail`/`grep` when you rely
+  on `$?`.
 - Run `uv run` with `--no-project`; otherwise uv creates `uv.lock` and `.venv` in the repo.
 - **Shared account**: every user is `jovyan` with the same home and token. `~/work`, `~/.ssh`,
   `.gitconfig` belong to others: never read, modify or delete them. Work only in `~/ctlog-eval/`
@@ -133,6 +142,6 @@ uv run --no-project scripts/euler.py close      # delete the kernel when done
 - Environment: conda base with torch 2.7.0+cu128 preinstalled; do not `pip install` into base
   (shared), use a venv or `pip install --target`. `/dev/shm` is 64 MB, so set DataLoader
   `num_workers=0` (ultralytics: `workers=0, cache="ram"`). No web proxy (no MLflow UI there).
-- Provisioning checklist (needs the user's OK): clone the public GitHub repo, copy datasets
+- Provisioning a fresh copy (needs the user's OK): clone the public GitHub repo, copy datasets
   (~660 MB) and DINOv3 weights, and fix `REPO_DIR` in `src/segmentation_head.py`
   (hard-coded `/home/mary/code/dinov3`).
