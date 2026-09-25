@@ -6,7 +6,7 @@ import yaml
 
 
 class KwpTrainingConfig(BaseModel):
-    """Configuration for 2.5D knot/wood/pith DINOv3 segmentation training.
+    """Configuration for 2.5D knot/wood DINOv3 segmentation training.
 
     A log-level holdout is used: whole logs go to train vs. val so correlated
     slices never leak across the split.
@@ -34,12 +34,18 @@ class KwpTrainingConfig(BaseModel):
     tversky_beta: float = Field(0.7, ge=0, le=1)
     ignore_background_in_tversky: bool = True
 
-    class_weighting: Literal["none", "effective_number", "inverse_frequency"] = "none"
+    class_weighting: Literal[
+        "none",
+        "effective_number",
+        "inverse_frequency",
+        "capped_inverse_frequency",
+    ] = "none"
     # The paper's typical 0.9-0.9999 (Cui et al. 2019) is calibrated for instance/image counts in
     # the hundreds to thousands; at this dataset's per-pixel scale (1e5-1e9) it underflows to
     # uniform weights. See src/utils/class_balance.py and scripts/compute_class_pixel_counts.py.
     class_weight_beta: float = Field(1 - 1e-7, ge=0, lt=1)
     class_weight_power: float = Field(1.0, gt=0)
+    class_weight_floor_share: float = Field(0.01, gt=0, le=1)
     class_pixel_counts: Optional[List[int]] = None
 
     lr_schedule: Literal["none", "cosine", "multistep"] = "none"

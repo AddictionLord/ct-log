@@ -16,7 +16,11 @@ from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
 from src.utils.checkpoints import save_best_copy
-from src.utils.class_balance import effective_number_weights, inverse_frequency_weights
+from src.utils.class_balance import (
+    capped_inverse_frequency_weights,
+    effective_number_weights,
+    inverse_frequency_weights,
+)
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
 from src.utils.prediction_panels import render_panel
@@ -93,26 +97,32 @@ def build_class_weights(config: KwpTrainingConfig, device: torch.device) -> torc
         device: Device the weights are moved to.
 
     Returns:
-        torch.Tensor | None: [num_classes + 1] weights, or None when class_weighting is "none".
+        torch.Tensor | None: [num_classes] weights, or None when class_weighting is "none".
 
     Raises:
         ValueError: If class_weighting is not "none" but class_pixel_counts is unset, or its
-            length does not match num_classes + 1.
+            length does not match num_classes.
     """
     if config.class_weighting == "none":
         return None
     if config.class_pixel_counts is None:
         msg = f"class_weighting={config.class_weighting!r} requires class_pixel_counts to be set"
         raise ValueError(msg)
-    if len(config.class_pixel_counts) != config.num_classes + 1:
+    if len(config.class_pixel_counts) != config.num_classes:
         msg = (
             f"class_pixel_counts has {len(config.class_pixel_counts)} entries, "
-            f"expected {config.num_classes + 1} (num_classes + background)"
+            f"expected {config.num_classes} (num_classes includes background)"
         )
         raise ValueError(msg)
 
     if config.class_weighting == "effective_number":
         weights = effective_number_weights(config.class_pixel_counts, beta=config.class_weight_beta)
+    elif config.class_weighting == "capped_inverse_frequency":
+        weights = capped_inverse_frequency_weights(
+            config.class_pixel_counts,
+            floor_share=config.class_weight_floor_share,
+            power=config.class_weight_power,
+        )
     else:
         weights = inverse_frequency_weights(config.class_pixel_counts, power=config.class_weight_power)
     return weights.to(device)
@@ -130,7 +140,7 @@ def compute_loss(
         outputs: [B, C, H, W] logits.
         masks: [B, H, W] int64 class ids.
         config: Training configuration.
-        class_weights: Optional [num_classes + 1] per-class weights, from build_class_weights.
+        class_weights: Optional [num_classes] per-class weights, from build_class_weights.
 
     Returns:
         torch.Tensor: Scalar loss.
@@ -139,7 +149,7 @@ def compute_loss(
         outputs, masks, config.focal_alpha, config.focal_gamma, class_weights=class_weights
     )
 
-    masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes + 1).permute(0, 3, 1, 2)
+    masks_one_hot = torch.nn.functional.one_hot(masks, config.num_classes).permute(0, 3, 1, 2)
     district_loss = multiclass_tversky_loss(
         outputs,
         masks_one_hot,
@@ -228,7 +238,7 @@ def evaluate(
     if pith_head is not None:
         pith_head.eval()
     losses = []
-    iou = PerClassIoU(num_classes=config.num_classes + 1, class_names=KwpMaskBuilder.class_names())
+    iou = PerClassIoU(num_classes=config.num_classes, class_names=KwpMaskBuilder.class_names())
     pith_errors: List[float] = []
 
     for batch in dataloader:
@@ -368,7 +378,7 @@ def main() -> None:
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes + 1,
+        num_classes=config.num_classes,
         input_size=config.resolution[0],
         n_layers=config.n_layers,
     )

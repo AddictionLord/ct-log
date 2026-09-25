@@ -6,15 +6,14 @@ import torch
 
 def test_uses_class_names_as_keys() -> None:
     """Metric keys carry the class names instead of ids."""
-    iou = PerClassIoU(num_classes=4, class_names=KwpMaskBuilder.class_names())
-    iou.update(torch.tensor([[0, 1, 2, 3]]), torch.tensor([[0, 1, 2, 2]]))
+    iou = PerClassIoU(num_classes=3, class_names=KwpMaskBuilder.class_names())
+    iou.update(torch.tensor([[0, 1, 2, 0]]), torch.tensor([[0, 1, 2, 2]]))
 
     assert iou.compute() == {
-        "iou_background": 1.0,
+        "iou_background": 0.5,
         "iou_wood": 1.0,
         "iou_knot": 0.5,
-        "iou_pith": 0.0,
-        "mean_iou_fg": 0.5,
+        "mean_iou_fg": 0.75,
     }
 
 

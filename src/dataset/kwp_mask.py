@@ -6,25 +6,23 @@ import torch
 
 
 class KwpMaskBuilder:
-    """Builds single-channel 3-class masks (knot / wood / pith) from Supervisely annotations.
+    """Builds single-channel 3-class masks (background / wood / knot) from annotations.
 
     Class ids:
         0 = background
         1 = wood
         2 = knot
-        3 = pith
 
-    Higher-priority classes overwrite lower ones where they overlap. Pith (a point)
-    sits on top of knot, which sits on top of wood.
+    Higher-priority classes overwrite lower ones where they overlap. Knot sits on top
+    of wood. Pith remains available through pith_xy_normalized for regression only.
     """
 
     class_to_id: ClassVar[Dict[str, int]] = {
         "background": 0,
         "wood": 1,
         "knot": 2,
-        "pith": 3,
     }
-    draw_order: ClassVar[List[str]] = ["wood", "knot", "pith"]
+    draw_order: ClassVar[List[str]] = ["wood", "knot"]
 
     @classmethod
     def class_names(cls) -> List[str]:

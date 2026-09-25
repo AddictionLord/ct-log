@@ -18,9 +18,8 @@ from src.segmentation_head import create_dinov3_segmentor
 from src.train_kwp import extract_features, make_transform
 import torch
 
-CLASS_NAMES = {0: "background", 1: "wood", 2: "knot", 3: "pith"}
-# background, wood, knot, pith
-CLASS_COLORS = np.array([[0, 0, 0], [120, 90, 60], [220, 50, 50], [0, 200, 255]], dtype=np.uint8)
+CLASS_NAMES = {0: "background", 1: "wood", 2: "knot"}
+CLASS_COLORS = np.array([[0, 0, 0], [120, 90, 60], [220, 50, 50]], dtype=np.uint8)
 
 
 def colorize(mask: np.ndarray) -> np.ndarray:
@@ -76,7 +75,7 @@ def main() -> None:
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes + 1,
+        num_classes=config.num_classes,
         input_size=config.resolution[0],
         n_layers=config.n_layers,
     )

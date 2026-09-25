@@ -44,7 +44,7 @@ def main() -> None:
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes + 1,
+        num_classes=config.num_classes,
         input_size=config.resolution[0],
         n_layers=config.n_layers,
     )
@@ -76,7 +76,7 @@ def main() -> None:
             prediction = seg_head(features).argmax(1).squeeze(0).cpu().numpy()
         target = sample["mask"].numpy()
 
-        iou = PerClassIoU(num_classes=config.num_classes + 1, class_names=KwpMaskBuilder.class_names())
+        iou = PerClassIoU(num_classes=config.num_classes, class_names=KwpMaskBuilder.class_names())
         iou.update(torch.from_numpy(prediction).unsqueeze(0), torch.from_numpy(target).unsqueeze(0))
         scores = iou.compute()
 
@@ -98,9 +98,8 @@ def main() -> None:
         mpatches.Patch(color="#ff0000", label="false positive"),
         mpatches.Patch(color="#005aff", label="missed"),
         mpatches.Patch(color="#e62828", label="knot (GT/pred)"),
-        mpatches.Patch(color="#00c8ff", label="pith"),
     ]
-    figure.legend(handles=handles, loc="lower center", ncol=6, fontsize=9, frameon=False)
+    figure.legend(handles=handles, loc="lower center", ncol=5, fontsize=9, frameon=False)
     figure.suptitle(f"{args.split} - {checkpoint.name}", fontsize=12)
     figure.tight_layout(rect=(0, 0.03, 1, 0.98))
 

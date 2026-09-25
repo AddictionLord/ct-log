@@ -1,7 +1,7 @@
-# 2.5D knot/wood/pith DINOv3 segmentation.
+# 2.5D knot/wood DINOv3 segmentation with optional pith coordinate regression.
 # Log-level holdout: train on log 4, validate on the unseen log 10.
 
-num_classes: 3  # wood, knot, pith (background is class 0, so 4 logits)
+num_classes: 3  # background, wood, knot
 lr: 0.0001
 num_epochs: 60
 resolution: [320, 320]

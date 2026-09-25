@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
-CLASS_COLORS = np.array([[0, 0, 0], [140, 100, 60], [230, 40, 40], [0, 200, 255]], dtype=np.uint8)
+CLASS_COLORS = np.array([[0, 0, 0], [140, 100, 60], [230, 40, 40]], dtype=np.uint8)
 PITH_TRUE_COLOR = (0, 255, 0)
 PITH_PRED_COLOR = (255, 0, 255)
 SEPARATOR_WIDTH = 4

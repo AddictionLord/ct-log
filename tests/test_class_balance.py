@@ -1,5 +1,10 @@
 import pytest
-from src.utils.class_balance import class_counts_from_masks, effective_number_weights, inverse_frequency_weights
+from src.utils.class_balance import (
+    capped_inverse_frequency_weights,
+    class_counts_from_masks,
+    effective_number_weights,
+    inverse_frequency_weights,
+)
 import torch
 
 
@@ -83,3 +88,42 @@ def test_pixel_scale_counts_differentiate_at_high_beta() -> None:
     weights = effective_number_weights([3_226_729_598, 388_031_918, 5_227_266, 214_822], beta=1 - 1e-7)
 
     assert weights[3] > weights[2] > weights[1] == weights[0]
+
+
+def test_capped_inverse_frequency_floor_one_is_uniform() -> None:
+    """floor_share=1.0 clamps every class to the total count."""
+    weights = capped_inverse_frequency_weights([1000, 100, 10], floor_share=1.0)
+
+    assert torch.allclose(weights, torch.ones(3))
+
+
+def test_capped_inverse_frequency_limits_tiny_class_ratio() -> None:
+    """The floor limits a tiny class to the configured maximum weight ratio."""
+    weights = capped_inverse_frequency_weights([1000, 10], floor_share=0.1)
+
+    assert (weights[1] / weights[0]).item() <= 10.0 + 1e-6
+
+
+@pytest.mark.parametrize("floor_share", [0.0, -0.1, 1.01])
+def test_capped_inverse_frequency_rejects_invalid_floor_share(floor_share: float) -> None:
+    """floor_share must be greater than zero and no greater than one."""
+    with pytest.raises(ValueError, match="floor_share must be in"):
+        capped_inverse_frequency_weights([100, 10], floor_share=floor_share)
+
+
+def test_capped_inverse_frequency_sums_to_num_classes() -> None:
+    """Capped weights retain the normalization invariant."""
+    weights = capped_inverse_frequency_weights([500, 50, 5], floor_share=0.01)
+
+    assert weights.sum().item() == pytest.approx(3.0, abs=1e-4)
+
+
+def test_capped_inverse_frequency_real_counts_are_bounded_and_ordered() -> None:
+    """Measured KWP counts stay ordered while respecting the configured ratio cap."""
+    weights = capped_inverse_frequency_weights(
+        [3_226_729_598, 388_031_918, 5_227_266, 214_822],
+        floor_share=0.01,
+    )
+
+    assert (weights.max() / weights.min()).item() <= 100.0 + 1e-4
+    assert weights[3] >= weights[2] >= weights[1] >= weights[0]

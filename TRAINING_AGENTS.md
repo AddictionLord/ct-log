@@ -80,8 +80,9 @@ pkill -f "src.train_kwp .*--run_name $RUN"
 - A supervisor restart opens a **new MLflow run with the same name**; metrics of a crashed and
   resumed training are split across those runs. Mention it when reporting.
 - What a kwp run logs:
-  - Metric keys use class names: `val/iou_knot`, `val/iou_wood`, `val/iou_pith`, `val/iou_background`
-    (runs before 2026-09-24 used `iou_2`, `iou_1`, `iou_3`, `iou_0`).
+  - Segmentation metric keys use class names: `val/iou_knot`, `val/iou_wood`,
+    `val/iou_background`. Pith is regression-only and uses `pith_err_*_px`.
+    Runs before 2026-09-24 used `iou_2`, `iou_1`, `iou_3`, `iou_0`.
   - `train/` has only `loss` and `lr`; train-split IoU is in `train_eval/` every `train_eval_interval`
     epochs, the train/val gap is `train_eval/mean_iou_fg - val/mean_iou_fg`.
   - `train_info.yaml` (artifact root and `local_log_dir`), rewritten every epoch and at the end:

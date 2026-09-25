@@ -1,21 +1,21 @@
 # Class-balanced follow-up to kwp-v1-baseline-overnight.
 #
 # Same split, model and schedule as train_kwp_v1.yaml (see there for the split rationale).
-# The only change is inverse-frequency class weighting on the focal + Tversky loss, to test
-# whether it helps knot/pith IoU given the severe pixel imbalance measured on this train set
+# The only change is capped inverse-frequency class weighting on the focal + Tversky loss, to test
+# whether it helps knot IoU given the severe pixel imbalance measured on this train set
 # (scripts/compute_class_pixel_counts.py --config src/configs/train_kwp_v1.yaml):
 #
 #   background  3,226,729,598 px  (89.13%)
 #   wood          388,031,918 px  (10.72%)
 #   knot            5,227,266 px  ( 0.14%)   ~74x rarer than wood
-#   pith               214,822 px  (0.0059%)  ~1614x rarer than wood, ~36x rarer than knot
+# Pith counts are omitted because pith is regression-only now.
 #
 # class_weighting: effective_number was tried first and rejected: at this pixel scale, Cui et
 # al.'s typical beta (0.9-0.9999, calibrated for instance/image counts) makes beta^n underflow
 # to 0 for every class, silently collapsing the weights to uniform (see
 # src/utils/class_balance.py). A correctly scaled beta (~1 - 1e-7) exists but only separates
-# knot/pith from wood/background, not wood from background (both still underflow). Plain
-# inverse-frequency weighting has no such scale dependence, so it is the primary variant here.
+# knot/pith from wood/background, not wood from background (both still underflow). Capped
+# inverse-frequency weighting retains count-derived weights without an extreme rare-class ratio.
 
 num_classes: 3
 lr: 0.0001
@@ -69,9 +69,10 @@ tversky_alpha: 0.3
 tversky_beta: 0.7
 ignore_background_in_tversky: true
 
-class_weighting: inverse_frequency
+class_weighting: capped_inverse_frequency
 class_weight_power: 1.0
-class_pixel_counts: [3226729598, 388031918, 5227266, 214822]
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
 
 # Cosine LR to reach a real converged baseline, matching kwp-v1-baseline-overnight so the
 # comparison isolates the class-weighting effect.

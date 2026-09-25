@@ -17,7 +17,7 @@ def main() -> None:
     config = KwpTrainingConfig.from_yaml(args.config)
     builder = KwpMaskBuilder(pith_radius=config.pith_radius)
     names = KwpMaskBuilder.class_names()
-    counts = [0] * (config.num_classes + 1)
+    counts = [0] * config.num_classes
     n_frames = 0
 
     for log_dir in config.train_logs:

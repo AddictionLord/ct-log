@@ -90,6 +90,39 @@ def inverse_frequency_weights(class_counts: Sequence[int], power: float = 1.0) -
     return weights.float()
 
 
+def capped_inverse_frequency_weights(
+    class_counts: Sequence[int],
+    floor_share: float = 0.01,
+    power: float = 1.0,
+) -> torch.Tensor:
+    """Inverse-frequency weights with counts floored to a share of the total.
+
+    For power=1.0, flooring every effective count at ``floor_share * total_count``
+    caps the maximum weight ratio at ``1 / floor_share``. The uncapped KWP
+    experiment produced a roughly 15000:1 pith-to-background ratio and degraded
+    every segmentation metric, motivating a bounded variant that remains derived
+    from measured class counts.
+
+    Args:
+        class_counts: Per-class sample count (pixels or instances), index = class id.
+        floor_share: Minimum effective count as a share of the total count, in (0, 1].
+        power: Exponent applied to the inverse frequency.
+
+    Returns:
+        torch.Tensor: [C] float32 weights, sum(weights) == num_classes.
+
+    Raises:
+        ValueError: If floor_share is not in (0, 1].
+    """
+    if not 0 < floor_share <= 1:
+        msg = f"floor_share must be in (0, 1], got {floor_share}"
+        raise ValueError(msg)
+
+    floor_count = floor_share * sum(class_counts)
+    effective_counts = [max(count, floor_count) for count in class_counts]
+    return inverse_frequency_weights(effective_counts, power=power)
+
+
 def class_counts_from_masks(masks: List[torch.Tensor], num_classes: int) -> List[int]:
     """Sum per-class pixel counts over a list of integer class-id masks.
 

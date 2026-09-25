@@ -12,7 +12,7 @@ PAGE_RE = re.compile(r"page_(\d+)")
 
 
 class CTLogKwpDataset(torch.utils.data.Dataset):
-    """2.5D knot/wood/pith segmentation dataset over full contiguous CT logs.
+    """2.5D knot/wood segmentation dataset over full contiguous CT logs.
 
     Each item is a center slice plus its axial neighbors stacked into the channel
     dimension. With ``window=1`` the channels are ``[z-1, z, z+1]`` (Option A).

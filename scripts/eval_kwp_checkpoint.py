@@ -35,7 +35,7 @@ def main() -> None:
 
     model, seg_head = create_dinov3_segmentor(
         backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes + 1,
+        num_classes=config.num_classes,
         input_size=config.resolution[0],
         n_layers=config.n_layers,
     )
