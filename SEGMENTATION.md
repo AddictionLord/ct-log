@@ -343,6 +343,68 @@ supervisor process itself died, so auto-resume never fired. Training stopped
 at 2026-09-21 10:02 mid-epoch 16. Full state is in
 `kwp_v1_extended.resume.pth`, so the run is resumable from epoch ~15.
 
+### kwp-v1-baseline-overnight: real converged baseline (2026-09-25)
+
+Reran v1-extended's split (20 logs, val=1+4, test=10) cleanly to completion on
+euler: 40 epochs, batch 8, cosine LR (the earlier run used constant LR and
+never converged — see "Run did not complete" above). Code at `729eda9`.
+
+**Test: fg 0.536, knot 0.419, wood 0.967, pith median 5.75px.** Best smoothed
+val fg 0.5057 at epoch ~39 (raw peak 0.5526). This is a genuine converged
+number, not a floor — first clean finish this dataset has had.
+
+Train-eval gap grew from +0.069 (epoch 0) to +0.330 (epoch 30): train fg
+reached ~0.87 while val plateaued at 0.53-0.55 from epoch ~12 onward. Capacity
+is not the constraint; the model overfits without augmentation (none is used
+yet — see "Later options" below).
+
+### Class-balanced loss weighting: negative result (2026-09-25)
+
+Hypothesis: focal+Tversky with no class weighting under-serves knot (0.14% of
+train pixels) and pith (0.0059%) relative to wood (10.7%) and background
+(89.1%). Tried inverse-frequency weighting (`power=1.0`) on the same split/
+schedule as the baseline above, for a same-conditions comparison.
+
+`effective_number_weights` (Cui et al. 2019) was tried first and rejected
+before launch: at pixel-count scale (1e5-1e9), the paper's typical beta
+(0.9-0.9999, calibrated for instance/image counts) makes `beta**n` underflow
+to 0 for every class, silently collapsing to uniform weights. A correctly
+scaled beta (~1-1e-7) exists but only separates knot/pith from wood/
+background, not wood from background (both still underflow) — see
+`src/utils/class_balance.py` and `scripts/compute_class_pixel_counts.py`.
+
+| metric | baseline | class-weighted | delta |
+|---|---|---|---|
+| test fg | **0.536** | 0.447 | -0.089 |
+| test knot | **0.419** | 0.318 | -0.101 |
+| test wood | 0.967 | 0.799 | -0.168 |
+| test background | 0.998 | 0.978 | -0.020 |
+| test pith seg IoU | 0.222 | 0.223 | tied |
+| test pith error (median px) | 8.29 | **5.59** | better |
+| best smoothed val fg | 0.5057 | 0.4644 | -0.041 |
+
+**Made everything worse, including knot** — the class it targeted. Weights
+used: background 0.00026, wood 0.0021, knot 0.158, pith 3.84 (~15,000:1 pith:
+background ratio). Val fg started at 0.076 (vs baseline's 0.42 at epoch 0),
+took ~16 epochs to reach where the baseline started, then plateaued ~0.46.
+Train-eval gap stayed smaller throughout (+0.222 vs +0.330 at epoch 30) — not
+because it generalized better, but because it was still underfitting the easy
+classes at that point, never catching up to the baseline's optimum.
+
+The one plausible positive: pith localization error dropped from 8.3px to
+5.6px median despite flat pith seg IoU. Pith is a separate coordinate-
+regression head not touched by these seg weights, so this is likely an
+indirect effect via shared backbone-adjacent feature use, not a mechanism the
+experiment was testing. Uncertain, not re-verified.
+
+**Conclusion: reject `power=1.0` inverse-frequency weighting.** If revisited,
+try a much gentler weighting (e.g. `power=0.3-0.5`, or effective-number with
+beta scaled to touch only knot/pith, leaving wood/background near 1.0) rather
+than assuming stronger reweighting helps more — this run is evidence it
+doesn't. Not attempted this session; the mechanism (`class_weighting: none|
+effective_number|inverse_frequency` in `KwpTrainingConfig`) is in place and
+tested (22 unit tests), so a follow-up is a config change, not new code.
+
 ### Thin-knot filter analysis (for v2)
 
 The annotation filters reject essentially all thin knots. Ablation over
