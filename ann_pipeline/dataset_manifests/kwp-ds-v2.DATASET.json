@@ -1,0 +1,210 @@
+{
+ "version": "kwp-ds-v2",
+ "created": "2026-09-30T19:50:07",
+ "git_commit": "69498d70473591bf2ec13282bf9bf084989da2a4",
+ "git_dirty": true,
+ "generator": {
+  "knot": {
+   "model": "ann_pipeline/out/knot_runs/yolo11n_seg_v5_val10/weights/best.pt",
+   "sha256": "296e6f21ff9655330d58db254a63289ee0169e240bfb7ab98b3480958e6e718c",
+   "conf": 0.25,
+   "post": "union of instance masks, clipped to wood, one Knot object per 8-connected component, no other filters"
+  },
+  "pith": {
+   "model": "ann_pipeline/out/knot_runs/yolo11n_obb_2cls_v5_n640/weights/best.pt",
+   "sha256": "092e9030052db721a68c3f3d2cdbe7b7e470b54cff2733705a82827df25dba51",
+   "conf": 0.1,
+   "post": "highest-confidence pith box centre (upload_ct_logs_to_phases._yolo_pith)"
+  },
+  "wood": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+  "human_root": "/mnt/D/datasets/ct_log/human_reviewed_20260929"
+ },
+ "logs": {
+  "3": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 181,
+   "knot_px": 842396,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/3/img"
+  },
+  "05": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 170,
+   "knot_px": 381421,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/05/img"
+  },
+  "06": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 178,
+   "knot_px": 244009,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/06/img"
+  },
+  "08": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 27,
+   "frames_with_knot": 178,
+   "knot_px": 343919,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/08/img"
+  },
+  "09": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 144,
+   "knot_px": 171115,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/09/img"
+  },
+  "13": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 119,
+   "knot_px": 204170,
+   "img_source": "/mnt/D/datasets/ct_log/generated/13/img"
+  },
+  "14": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 178,
+   "knot_px": 539549,
+   "img_source": "/mnt/D/datasets/ct_log/generated/14/img"
+  },
+  "15": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 163,
+   "knot_px": 210412,
+   "img_source": "/mnt/D/datasets/ct_log/generated/15/img"
+  },
+  "16": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 176,
+   "knot_px": 251802,
+   "img_source": "/mnt/D/datasets/ct_log/generated/16/img"
+  },
+  "17": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 199,
+   "knot_px": 505569,
+   "img_source": "/mnt/D/datasets/ct_log/generated/17/img"
+  },
+  "18": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 158,
+   "knot_px": 223547,
+   "img_source": "/mnt/D/datasets/ct_log/generated/18/img"
+  },
+  "19": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 132,
+   "knot_px": 221081,
+   "img_source": "/mnt/D/datasets/ct_log/generated/19/img"
+  },
+  "20": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 170,
+   "knot_px": 263384,
+   "img_source": "/mnt/D/datasets/ct_log/generated/20/img"
+  },
+  "21": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 171,
+   "knot_px": 246833,
+   "img_source": "/mnt/D/datasets/ct_log/generated/21/img"
+  },
+  "23": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 190,
+   "knot_px": 483888,
+   "img_source": "/mnt/D/datasets/ct_log/generated/23/img"
+  },
+  "24": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 162,
+   "knot_px": 298791,
+   "img_source": "/mnt/D/datasets/ct_log/generated/24/img"
+  },
+  "25": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 147,
+   "knot_px": 233298,
+   "img_source": "/mnt/D/datasets/ct_log/generated/25/img"
+  },
+  "26": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 144,
+   "knot_px": 199416,
+   "img_source": "/mnt/D/datasets/ct_log/generated/26/img"
+  },
+  "27": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 166,
+   "knot_px": 250244,
+   "img_source": "/mnt/D/datasets/ct_log/generated/27/img"
+  },
+  "1": {
+   "kind": "human",
+   "frames": 291,
+   "img_pages": 292,
+   "frames_with_knot": 170,
+   "knot_px": 439294,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/1/img"
+  },
+  "2": {
+   "kind": "human",
+   "frames": 290,
+   "img_pages": 297,
+   "frames_with_knot": 192,
+   "knot_px": 367600,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/2/img"
+  },
+  "4": {
+   "kind": "human",
+   "frames": 291,
+   "img_pages": 292,
+   "frames_with_knot": 201,
+   "knot_px": 311448,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/4/img"
+  },
+  "10": {
+   "kind": "human",
+   "frames": 293,
+   "img_pages": 299,
+   "frames_with_knot": 177,
+   "knot_px": 233198,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/10/img"
+  }
+ },
+ "manifest": "MANIFEST.sha256 (6850 annotation files)",
+ "manifest_sha256": "05abd00072db038abcb08bd30b4330ae99d9a928fe7d1c77f8e24fcaa0b26e83"
+}

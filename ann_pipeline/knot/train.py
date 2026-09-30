@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--project", default="/home/mary/code/ct-log/ann_pipeline/out/knot_runs")
     parser.add_argument("--name", default="yolo11n_knots")
     parser.add_argument("--device", default="0")
+    parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     pathlib.Path(args.project).mkdir(parents=True, exist_ok=True)
@@ -44,6 +45,7 @@ def main() -> None:
         project=args.project,
         name=args.name,
         device=args.device,
+        seed=args.seed,
         degrees=180.0,
         flipud=0.5,
         fliplr=0.5,
