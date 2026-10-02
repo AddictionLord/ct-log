@@ -22,7 +22,7 @@ before starting anything. When in doubt, ask the user instead of guessing.
 | Host | GPU | Status |
 |---|---|---|
 | Local machine (this repo) | GTX 1650, 4 GB | **Default.** conda env `ct-log`, torch 2.7.0+cu128. Data in `/mnt/D/datasets/ct_log`, weights in `/mnt/D/models`. |
-| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Provisioned 2026-09-24 under `~/ctlog-eval/` (copied working tree, data, DINOv3 weights). Jobs run via `scripts/euler.py bg` in `~/jobs/<name>/`. `num_workers=0` is forced (64 MB `/dev/shm`). Throughput plateaus at ~13.5 samples/s from batch 8 up (the single-threaded loader is the bottleneck, not VRAM), so bigger batches don't help. See [euler](#euler-remote-gpu). |
+| euler.mendelu.cz | RTX 5070 Ti, 16 GB | Provisioned 2026-09-24, moved 2026-09-28 to `~/work/ctlog-eval/` (copied working tree, data, DINOv3 weights, `.venv`). Jobs run via `scripts/euler.py bg` in `~/jobs/<name>/`. `num_workers=0` is forced (64 MB `/dev/shm`). At 320 px throughput plateaus at ~13.5 samples/s from batch 8 up (the single-threaded loader is the bottleneck, not VRAM). At 784 px the GPU is the bottleneck: 4.2 samples/s flat for batch 4-12, 4.6 at 16; peak 5.5 GB at batch 8, 9.4 GB at 16. See [euler](#euler-remote-gpu). |
 
 ## Launching (local)
 
@@ -166,9 +166,22 @@ uv run --no-project scripts/euler.py close      # delete the kernel when done
   uploaded size and exits non-zero on failure. A pipe (`put ... | tail`) reports the status of the
   last command only, so use `set -o pipefail` when you rely on `$?`.
 - Run `uv run` with `--no-project`; otherwise uv creates `uv.lock` and `.venv` in the repo.
-- **Shared account**: every user is `jovyan` with the same home and token. `~/work`, `~/.ssh`,
-  `.gitconfig` belong to others: never read, modify or delete them. Work only in `~/ctlog-eval/`
-  and `~/jobs/`.
+- **Only `~/work` survives a container recreation** (it is the host mount `/dev/sdc1`; the admin,
+  Robert Mařík, asked us on 2026-09-26 to keep everything there). Everything else in the container,
+  including `~/jobs/`, `/tmp` and any `.venv` outside `~/work`, is lost when the container is
+  recreated, e.g. to change `--shm-size`. So: code, data, weights, venv, checkpoints
+  (`checkpoint_path`, `local_checkpoint_dir`) and logs go under `~/work/ctlog-eval/`. `~/jobs/`
+  only holds runner files; `tee` job stdout into `~/work/ctlog-eval/logs/` if you need it later.
+- **Shared account**: every user is `jovyan` with the same home and token. Other directories in
+  `~/work` (SAM2, PINN, CVAT_pokus, ...), `~/.ssh` and `.gitconfig` belong to others: never read,
+  modify or delete them. Work only in `~/work/ctlog-eval/` and `~/jobs/`.
+- Paths inside the euler copy are absolute (`/home/jovyan/work/ctlog-eval/...` in
+  `src/configs/*_active.yaml`, `*_euler*.yaml`, `*_784.yaml` and `REPO_DIR` in
+  `src/segmentation_head.py`). Old resume states in `ckpt/*.resume.pth` still embed the pre-move
+  path; they are only needed to resume those finished runs.
+- `scripts/euler.py put` takes the remote path **relative to home** (`work/ctlog-eval/x`, not
+  `/home/jovyan/...`). Moving big trees through the Contents API (`PATCH`) times out client-side
+  while the server keeps copying; use `euler.py exec "mv ..."` / `cp -a` + `diff -rq` instead.
 - Any credential placed there is readable by the other users. The DagsHub token may go there
   only with the user's approval, as a file that the job deletes right after reading it.
 - GPU is shared and other users' processes are invisible in the container: judge by

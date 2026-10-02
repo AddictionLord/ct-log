@@ -93,3 +93,26 @@ Phase2 auto annotations use the peel detector for wood.
 Agents that launch, monitor or report training (locally or on euler.mendelu.cz) must follow
 `TRAINING_AGENTS.md`. MLflow tracking is on DagsHub
 (`https://dagshub.com/AddictionLord/ct-log.mlflow`, public); credentials live in `.env`.
+
+### Monitoring long runs cheaply
+
+Every wake-up of the main session re-sends its whole context, so do not poll with the model or
+use periodic heartbeats. Watch a run with `scripts/euler_watch.sh` started as a background
+command of the session that should react:
+
+```bash
+scripts/euler_watch.sh <job> <remote_run_script> <remote_train_info_yaml>
+```
+
+- Polling is a bash probe every 5 min (zero model tokens). The script exits, and so wakes the
+  session, only when a decision is needed: FINISHED, FAILED (supervisor gave up), BUG, MLFLOW,
+  STALL, UNREACHABLE, RECOVERY limit. Events are appended to `logs/euler_watch_<job>.log`.
+- It recovers on its own from a container restart/recreation (re-stages the MLflow credentials
+  from `.env` and relaunches the job, which resumes from `~/work`).
+- A new traceback is triaged by a small model (`claude -p --model sonnet --tools ""`, headless,
+  no tools, ~$0.02 and 4 s per call). TRANSIENT (OOM from another GPU user, network, signal) is
+  left to the on-euler supervisor; BUG wakes the main session.
+- Status questions ("jak je na tom trénink?") are answered with one probe on demand, not by
+  keeping a heartbeat.
+- Start each new experiment in a fresh session: context is the dominant token cost.
+  `TRAINING_AGENTS.md` and `ann_pipeline/DETECTOR_PROVENANCE.md` carry the needed background.

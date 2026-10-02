@@ -427,6 +427,52 @@ Proposed v2 experiment: 2x2 over area (150/40) x solidity (0.85/0.6), leaving
 eccentricity alone, plus a real-vs-noise check on recovered instances (score
 them against human labels on log 10, which is out of both detectors' training).
 
+## kwp-ds-v2 runs: labels, resolution, fine-tuning, augmentation (2026-09-30 to 2026-10-02)
+
+All runs on euler (RTX 5070 Ti), DINOv3 ViT-L/16, capped class weighting, no pith segmentation,
+pith regression head, cosine LR. Train = 19 auto logs + human log 2, val = human logs 1 and 4,
+test = human log 10. v1 and v2 val numbers are not comparable (v2 corrected 83 val frames);
+test log 10 is identical in both. The superseded filter sweep above was replaced by kwp-ds-v2
+(plain YOLO-seg labels, no filter chain; see `ann_pipeline/DATASET_VERSIONS.md`).
+
+Test log 10:
+
+| run | fg | knot | wood | pith median |
+|---|---|---|---|---|
+| v1 320 frozen, 40 ep | 0.699 | 0.436 | 0.961 | 5.61 px |
+| v2 320 frozen, 40 ep (repeat) | 0.728 (0.726) | 0.493 (0.492) | 0.963 | 5.58 (5.27) px |
+| v1 784 frozen, 40 ep | 0.778 | 0.585 | 0.972 | 4.27 px |
+| v2 784 frozen, 20 ep | 0.802 | 0.633 | 0.971 | 4.71 px |
+| v2 784 frozen, 40 ep, bf16 | 0.808 | 0.643 | 0.973 | 4.72 px |
+| v2 784 last 4 blocks, lr 1e-5, 20 ep | 0.822 | 0.672 | 0.973 | 4.90 px |
+| v2 784 last 4 blocks, lr 3e-5, 20 ep | 0.828 | 0.680 | 0.975 | 4.82 px |
+| v2 784 last 4 blocks, lr 3e-5, aug, 20 ep | 0.823 | 0.674 | 0.973 | 6.66 px* |
+| v2 784 last 4 blocks, lr 3e-5, aug, 20+20 ep (warm restart) | 0.825 | 0.677 | 0.974 | 4.85 px |
+
+\* pith head taken from the final epoch, not the best one (bug fixed afterwards).
+
+Findings:
+
+- **Labels**: kwp-ds-v2 adds ~+0.05 test knot at both 320 and 784. Seed noise at 320 frozen is
+  ~0.001 knot (two identical runs), so this is far above noise.
+- **bf16 backbone** (head, loss, optimizer in fp32): 5.5x backbone throughput, feature cosine
+  0.9994 vs fp32, 99.99% identical predicted pixels. 784 epoch 29 -> ~7.5 min.
+- **Bias/variance via the log-2 probe** (`train_probe_logs`: the human-labelled train log
+  evaluated separately). At 320 the gap probe -> val is 0.24 knot (variance); at 784 frozen it is
+  small (~0.07) with val flattening at ~0.67 (capacity limit); fine-tuning the last 4 blocks
+  breaks that ceiling but reopens the gap (0.10 at ep 15); augmentation (rotation 0-360, flip,
+  intensity jitter) closes it to 0.03 and gives the lowest val loss of all runs.
+- **Per-log paired block bootstrap** (`scripts/eval_per_log.py`, blocks of 20 slices, 2000
+  resamples; logs 1/4 were used for checkpoint selection) over logs 1+4+10, knot difference
+  vs last4 lr 3e-5: aug 20+20 +0.0017 [-0.0030, +0.0064] (tie), lr 1e-5 -0.0047 [-0.0086,
+  -0.0012], frozen 40 ep -0.0162 [-0.0227, -0.0097]. The fine-tuning gain is log-dependent
+  (+0.037 on log 10, not significant on log 1). Single-log 95% intervals are about +-0.04, so
+  differences between models are now smaller than differences between logs.
+
+Conclusion: tuning on 20 training logs has saturated (models within ~0.005 knot). The next
+lever is more distinct training logs; with augmentation in place, more backbone capacity is
+the second candidate.
+
 ## Later options — superseded
 
 The original plan was a ladder: **A** (channel-stacked 2.5D) → **B**

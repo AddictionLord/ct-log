@@ -53,6 +53,13 @@ class KwpTrainingConfig(BaseModel):
     lr_gamma: float = 0.1
     test_logs: List[str] = []
     train_eval_interval: int = 0
+    train_probe_logs: List[str] = []
+    dataset_version: Optional[str] = None
+    backbone_bf16: bool = False
+    backbone_trainable_blocks: int = Field(0, ge=0)
+    backbone_lr: float = Field(1e-5, gt=0)
+    augment: bool = False
+    init_from: Optional[Path] = None
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     resume: bool = False

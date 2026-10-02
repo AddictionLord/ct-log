@@ -30,19 +30,21 @@ from src.utils.train_info import TrainInfo
 NATIVE_SLICE_SIZE = 778
 
 
-def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int) -> torch.Tensor:
+def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int, bf16: bool = False) -> torch.Tensor:
     """Extract and concatenate patch features from the last n_layers backbone blocks.
 
     Args:
         model: Frozen DINOv3 backbone.
         images: [B, 3, H, W] normalized input.
         n_layers: Number of intermediate layers to concatenate.
+        bf16: Run the backbone under bfloat16 autocast; features are returned as float32.
 
     Returns:
         torch.Tensor: [B, num_patches, 1024 * n_layers] concatenated features.
     """
-    layers = model.get_intermediate_layers(images, n=n_layers, return_class_token=False)
-    return torch.cat(layers, dim=-1)
+    with torch.autocast(device_type=images.device.type, dtype=torch.bfloat16, enabled=bf16):
+        layers = model.get_intermediate_layers(images, n=n_layers, return_class_token=False)
+    return torch.cat(layers, dim=-1).float()
 
 
 def make_transform() -> torchvision.transforms.Normalize:
@@ -64,7 +66,11 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             and, when test_logs is set, "test".
     """
     train_ds = CTLogKwpDataset(
-        config.train_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+        config.train_logs,
+        resolution=config.resolution,
+        window=config.window,
+        pith_radius=config.pith_radius,
+        augment=config.augment,
     )
     val_ds = CTLogKwpDataset(
         config.val_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
@@ -84,6 +90,20 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
     if config.test_logs:
         loaders["test"] = torch.utils.data.DataLoader(
             test_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+        )
+    if config.augment:
+        train_eval_ds = CTLogKwpDataset(
+            config.train_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+        )
+        loaders["train_eval"] = torch.utils.data.DataLoader(
+            train_eval_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+        )
+    if config.train_probe_logs:
+        probe_ds = CTLogKwpDataset(
+            config.train_probe_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+        )
+        loaders["train_probe"] = torch.utils.data.DataLoader(
+            probe_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
     return loaders
 
@@ -245,7 +265,7 @@ def evaluate(
         images = transform(batch["image"].to(device))
         masks = batch["mask"].to(device)
 
-        features = extract_features(model, images, config.n_layers)
+        features = extract_features(model, images, config.n_layers, config.backbone_bf16)
         outputs = seg_head(features)
 
         if pith_head is not None:
@@ -304,7 +324,7 @@ def log_prediction_panels(
     )
     samples = [dataset[index] for index in indices]
     images = torch.stack([sample["image"] for sample in samples])
-    features = extract_features(model, transform(images.to(device)), config.n_layers)
+    features = extract_features(model, transform(images.to(device)), config.n_layers, config.backbone_bf16)
     predictions = seg_head(features).argmax(dim=1).cpu().numpy()
     pith_predictions = pith_head(features).cpu().tolist() if pith_head is not None else [None] * len(samples)
 
@@ -391,11 +411,23 @@ def main() -> None:
         pith_head = PithRegressionHead(feature_dim=1024 * config.n_layers).to(device)
         trainable += list(pith_head.parameters())
 
+    backbone_params = unfreeze_last_blocks(model, config.backbone_trainable_blocks)
+    finetune = bool(backbone_params)
+    param_groups = [{"params": trainable, "lr": config.lr}]
+    if finetune:
+        param_groups.append({"params": list(backbone_params.values()), "lr": config.backbone_lr})
+        print(
+            f"Fine-tuning last {config.backbone_trainable_blocks} backbone blocks "
+            f"({sum(p.numel() for p in backbone_params.values()) / 1e6:.1f}M params, lr={config.backbone_lr})"
+        )
+    backbone_ckpt_path = config.checkpoint_path.with_suffix(".backbone.pth")
+    pith_ckpt_path = config.checkpoint_path.with_suffix(".pith.pth")
+
     transform = make_transform()
     class_weights = build_class_weights(config, device)
     if class_weights is not None:
         print(f"Class weights ({config.class_weighting}): {class_weights.tolist()}")
-    optimizer = torch.optim.Adam(trainable, lr=config.lr)
+    optimizer = torch.optim.Adam(param_groups)
 
     scheduler = None
     if config.lr_schedule == "cosine":
@@ -422,9 +454,20 @@ def main() -> None:
     # Resume state lives beside the best-model checkpoint. Without it a crash
     # restart would silently begin at epoch 0 and corrupt the plateau reading.
     resume_path = config.checkpoint_path.with_suffix(".resume.pth")
+    if config.init_from is not None and not (config.resume and resume_path.exists()):
+        init_weights(config.init_from, seg_head, pith_head, model if finetune else None)
+        print(f"Initialized weights from {config.init_from}")
     if config.resume and resume_path.exists():
         state = torch.load(resume_path)
         seg_head.load_state_dict(state["seg_head"])
+        if finetune != (state.get("backbone") is not None):
+            message = (
+                f"Resume mismatch: backbone_trainable_blocks={config.backbone_trainable_blocks} but checkpoint "
+                f"{'has' if state.get('backbone') is not None else 'lacks'} backbone state."
+            )
+            raise ValueError(message)
+        if finetune:
+            model.load_state_dict(state["backbone"], strict=False)
         optimizer.load_state_dict(state["optimizer"])
 
         # Fail loudly on a mismatch rather than silently continuing with a
@@ -476,8 +519,8 @@ def main() -> None:
             images = transform(batch["image"].to(device))
             masks = batch["mask"].to(device)
 
-            with torch.no_grad():
-                features = extract_features(model, images, config.n_layers)
+            with torch.set_grad_enabled(finetune):
+                features = extract_features(model, images, config.n_layers, config.backbone_bf16)
 
             outputs = seg_head(features)
             loss = compute_loss(outputs, masks, config, class_weights)
@@ -522,7 +565,7 @@ def main() -> None:
         # bias/variance signal (both low => underfit, train >> val => overfit).
         if config.train_eval_interval and epoch_idx % config.train_eval_interval == 0:
             train_eval_loss, train_eval_metrics = evaluate(
-                model, seg_head, loaders["train"], transform, device, config, pith_head, class_weights
+                model, seg_head, loaders.get("train_eval", loaders["train"]), transform, device, config, pith_head, class_weights
             )
             tracker.add(
                 epoch_idx, "train_eval", train_eval_loss, train_eval_metrics["mean_iou_fg"], **train_eval_metrics
@@ -533,6 +576,18 @@ def main() -> None:
                 f"fg={train_eval_metrics['mean_iou_fg']:.4f} "
                 f"knot={train_eval_metrics['iou_knot']:.3f} gap={train_eval_metrics['mean_iou_fg'] - fg_iou:+.4f}"
             )
+            # Human-labelled train logs: separates auto-vs-human label mismatch (train_eval vs
+            # train_probe) from cross-log generalisation (train_probe vs val).
+            if "train_probe" in loaders:
+                probe_loss, probe_metrics = evaluate(
+                    model, seg_head, loaders["train_probe"], transform, device, config, pith_head, class_weights
+                )
+                tracker.add(epoch_idx, "train_probe", probe_loss, probe_metrics["mean_iou_fg"], **probe_metrics)
+                logger.log_metrics(tracker.get(epoch_idx, "train_probe")[-1])
+                print(
+                    f"Epoch {epoch_idx}, TRAIN-PROBE loss {probe_loss:.4f} "
+                    f"fg={probe_metrics['mean_iou_fg']:.4f} knot={probe_metrics['iou_knot']:.3f}"
+                )
 
         if config.viz_interval and (epoch_idx % config.viz_interval == 0 or epoch_idx == config.num_epochs - 1):
             for split in ("train", "val"):
@@ -559,8 +614,15 @@ def main() -> None:
             best_epoch = epoch_idx
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(seg_head.state_dict(), config.checkpoint_path)
+            if finetune:
+                torch.save(backbone_state(model, backbone_params), backbone_ckpt_path)
+            if pith_head is not None:
+                torch.save(pith_head.state_dict(), pith_ckpt_path)
             copy_path = save_best_copy(
-                best_state(seg_head, pith_head), best_copy_dir, epoch_idx, config.local_checkpoint_keep
+                best_state(seg_head, pith_head, backbone_state(model, backbone_params) if finetune else None),
+                best_copy_dir,
+                epoch_idx,
+                config.local_checkpoint_keep,
             )
             print(f"Epoch {epoch_idx}, new best smoothed_fg={smoothed:.4f}, local copy {copy_path}")
 
@@ -594,6 +656,7 @@ def main() -> None:
                     "epoch": epoch_idx,
                     "seg_head": seg_head.state_dict(),
                     "pith_head": pith_head.state_dict() if pith_head is not None else None,
+                    "backbone": backbone_state(model, backbone_params) if finetune else None,
                     "optimizer": optimizer.state_dict(),
                     "scheduler": scheduler.state_dict() if scheduler is not None else None,
                     "best_fg_iou": best_fg_iou,
@@ -616,6 +679,10 @@ def main() -> None:
     # the final-epoch weights.
     if best_epoch is not None:
         seg_head.load_state_dict(torch.load(config.checkpoint_path))
+        if finetune:
+            model.load_state_dict(torch.load(backbone_ckpt_path), strict=False)
+        if pith_head is not None and pith_ckpt_path.exists():
+            pith_head.load_state_dict(torch.load(pith_ckpt_path))
         if best_smoothed > last_uploaded_smoothed:
             logger.log_model(seg_head, f"kwp_seg_head_epoch_{best_epoch}", seg_head.example_input(), step=best_epoch)
             last_uploaded_smoothed = best_smoothed
@@ -652,20 +719,90 @@ def main() -> None:
     logger.end()
 
 
-def best_state(seg_head: torch.nn.Module, pith_head: Optional[torch.nn.Module]) -> Dict[str, Optional[dict]]:
+def best_state(
+    seg_head: torch.nn.Module, pith_head: Optional[torch.nn.Module], backbone: Optional[dict] = None
+) -> Dict[str, Optional[dict]]:
     """State dicts of a best model for the local best-copy history.
 
     Args:
         seg_head: Segmentation head.
         pith_head: Optional pith regression head.
+        backbone: Optional state dict of the fine-tuned backbone parameters.
 
     Returns:
-        Dict[str, Optional[dict]]: seg_head and pith_head state dicts (pith_head None when absent).
+        Dict[str, Optional[dict]]: seg_head, pith_head and backbone state dicts (None when absent).
     """
     return {
         "seg_head": seg_head.state_dict(),
         "pith_head": pith_head.state_dict() if pith_head is not None else None,
+        "backbone": backbone,
     }
+
+
+def init_weights(
+    path: Path,
+    seg_head: torch.nn.Module,
+    pith_head: Optional[torch.nn.Module],
+    backbone: Optional[torch.nn.Module],
+) -> None:
+    """Load head (and fine-tuned backbone) weights from another run's resume or best-copy file.
+
+    Only weights are taken; optimizer, scheduler and epoch counters start fresh, so a finished
+    cosine run can be continued with a new schedule (warm restart).
+
+    Args:
+        path: A ``*.resume.pth`` or best-copy file with seg_head / pith_head / backbone entries.
+        seg_head: Segmentation head to initialize.
+        pith_head: Optional pith head to initialize.
+        backbone: Backbone to initialize when its last blocks are fine-tuned, else None.
+
+    Raises:
+        ValueError: if the file lacks state this run needs.
+    """
+    state = torch.load(path, map_location="cpu")
+    if (pith_head is not None and state.get("pith_head") is None) or (
+        backbone is not None and state.get("backbone") is None
+    ):
+        message = f"init_from {path} lacks pith_head or backbone state required by this config"
+        raise ValueError(message)
+    seg_head.load_state_dict(state["seg_head"])
+    if pith_head is not None:
+        pith_head.load_state_dict(state["pith_head"])
+    if backbone is not None:
+        backbone.load_state_dict(state["backbone"], strict=False)
+
+
+def unfreeze_last_blocks(model: torch.nn.Module, num_blocks: int) -> Dict[str, torch.nn.Parameter]:
+    """Make the last num_blocks transformer blocks and the output norms trainable.
+
+    Args:
+        model: DINOv3 backbone with all parameters frozen.
+        num_blocks: Number of trailing blocks to unfreeze; 0 keeps the backbone frozen.
+
+    Returns:
+        Dict[str, torch.nn.Parameter]: the unfrozen parameters keyed by their backbone name.
+    """
+    if num_blocks == 0:
+        return {}
+    first = len(model.blocks) - num_blocks
+    prefixes = tuple(f"blocks.{index}." for index in range(first, len(model.blocks))) + ("norm.", "cls_norm.")
+    params = {name: param for name, param in model.named_parameters() if name.startswith(prefixes)}
+    for param in params.values():
+        param.requires_grad = True
+    return params
+
+
+def backbone_state(model: torch.nn.Module, params: Dict[str, torch.nn.Parameter]) -> Dict[str, torch.Tensor]:
+    """State of the fine-tuned backbone parameters only (the frozen rest is the pretrained file).
+
+    Args:
+        model: DINOv3 backbone.
+        params: Trainable backbone parameters from unfreeze_last_blocks.
+
+    Returns:
+        Dict[str, torch.Tensor]: name -> tensor for the trainable parameters.
+    """
+    return {name: tensor for name, tensor in model.state_dict().items() if name in params}
 
 
 if __name__ == "__main__":

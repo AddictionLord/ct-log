@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
+from src.dataset.augment import augment_sample
 from src.dataset.kwp_mask import KwpMaskBuilder
 import torch
 from torchvision import transforms
@@ -36,6 +37,7 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         resolution: Optional[Tuple[int, int]] = None,
         window: int = 1,
         pith_radius: int = 3,
+        augment: bool = False,
     ) -> None:
         """Initialize the dataset.
 
@@ -45,6 +47,7 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
             window: Number of neighbor slices on each side. 1 => [z-1, z, z+1] 2.5D,
                 0 => center slice replicated 3x (single-slice baseline).
             pith_radius: Radius of the rasterized pith point blob.
+            augment: Apply random rotation, flip and intensity jitter (training only).
         """
         if window not in (0, 1):
             message = f"window must be 0 or 1 to fit three channels, got {window}"
@@ -52,6 +55,7 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
 
         self.resolution = resolution
         self.window = window
+        self.augment = augment
         self.mask_builder = KwpMaskBuilder(pith_radius=pith_radius)
         self.to_tensor = transforms.ToTensor()
 
@@ -151,5 +155,7 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         mask = self.mask_builder.build(annotation).unsqueeze(0)
         mask = self.resize_mask(mask).squeeze(0)
         pith_xy = self.mask_builder.pith_xy_normalized(annotation)
+        if self.augment:
+            image, mask, pith_xy = augment_sample(image, mask, pith_xy)
 
         return {"image": image, "mask": mask, "pith_xy": pith_xy, "path": str(sample["center"])}
