@@ -75,13 +75,18 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
     val_ds = CTLogKwpDataset(
         config.val_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
     )
+    sampler = human_weighted_sampler(train_ds, config.human_frame_weight)
     if config.test_logs:
         test_ds = CTLogKwpDataset(
             config.test_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
         )
     loaders = {
         "train": torch.utils.data.DataLoader(
-            train_ds, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers
+            train_ds,
+            batch_size=config.batch_size,
+            shuffle=sampler is None,
+            sampler=sampler,
+            num_workers=config.num_workers,
         ),
         "val": torch.utils.data.DataLoader(
             val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
@@ -106,6 +111,28 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             probe_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
     return loaders
+
+
+def human_weighted_sampler(
+    dataset: CTLogKwpDataset, human_weight: float
+) -> Optional[torch.utils.data.WeightedRandomSampler]:
+    """Sampler that draws human-reviewed frames human_weight times as often as auto-labelled ones.
+
+    Args:
+        dataset: Training dataset.
+        human_weight: Relative sampling weight of human-reviewed frames; 1.0 disables the sampler.
+
+    Returns:
+        Optional[torch.utils.data.WeightedRandomSampler]: sampler with one epoch = len(dataset)
+            draws with replacement, or None for uniform shuffling.
+    """
+    if human_weight == 1.0:
+        return None
+    flags = dataset.human_reviewed()
+    weights = torch.tensor([human_weight if flag else 1.0 for flag in flags], dtype=torch.double)
+    share = float(weights[torch.tensor(flags)].sum() / weights.sum()) if any(flags) else 0.0
+    print(f"Human-weighted sampling: {sum(flags)}/{len(flags)} human frames, weight {human_weight}, share {share:.3f}")
+    return torch.utils.data.WeightedRandomSampler(weights, num_samples=len(dataset), replacement=True)
 
 
 def build_class_weights(config: KwpTrainingConfig, device: torch.device) -> torch.Tensor | None:
@@ -182,12 +209,15 @@ def compute_loss(
     return config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
 
 
-def pith_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+def pith_loss(
+    predictions: torch.Tensor, targets: torch.Tensor, weights: Optional[torch.Tensor] = None
+) -> torch.Tensor:
     """MSE on normalized pith coordinates, skipping slices with no pith.
 
     Args:
         predictions: [B, 2] predicted normalized (x, y).
         targets: [B, 3] ground-truth (x, y, valid).
+        weights: Optional [B] per-slice weights; the loss is their weighted mean over valid slices.
 
     Returns:
         torch.Tensor: Scalar loss; zero when no slice in the batch has a pith.
@@ -195,7 +225,11 @@ def pith_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     valid = targets[:, 2] > 0
     if not valid.any():
         return predictions.sum() * 0.0
-    return torch.nn.functional.mse_loss(predictions[valid], targets[valid, :2])
+    per_slice = ((predictions[valid] - targets[valid, :2]) ** 2).mean(dim=1)
+    if weights is None:
+        return per_slice.mean()
+    slice_weights = weights[valid]
+    return (per_slice * slice_weights).sum() / slice_weights.sum()
 
 
 @torch.no_grad()
@@ -525,7 +559,13 @@ def main() -> None:
             outputs = seg_head(features)
             loss = compute_loss(outputs, masks, config, class_weights)
             if pith_head is not None:
-                loss = loss + config.pith_loss_weight * pith_loss(pith_head(features), batch["pith_xy"].to(device))
+                pith_weights = None
+                if config.human_frame_weight != 1.0 and not config.human_weight_applies_to_pith:
+                    human = batch["human"].to(device)
+                    pith_weights = torch.where(human, 1.0 / config.human_frame_weight, 1.0)
+                loss = loss + config.pith_loss_weight * pith_loss(
+                    pith_head(features), batch["pith_xy"].to(device), pith_weights
+                )
             loss.backward()
             optimizer.step()
 

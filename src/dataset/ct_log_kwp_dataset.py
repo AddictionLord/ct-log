@@ -10,6 +10,7 @@ import torch
 from torchvision import transforms
 
 PAGE_RE = re.compile(r"page_(\d+)")
+HUMAN_REVIEW_TAG = "bumaska"
 
 
 class CTLogKwpDataset(torch.utils.data.Dataset):
@@ -125,6 +126,19 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         image = Image.open(path).convert("L")
         return self.to_tensor(image)
 
+    def human_reviewed(self) -> List[bool]:
+        """Whether each sample's annotation carries the human-review tag (``bumaska``).
+
+        Returns:
+            List[bool]: one flag per sample, in dataset order.
+        """
+        flags = []
+        for sample in self.samples:
+            with sample["ann"].open("r") as f:
+                tags = json.load(f).get("tags", [])
+            flags.append(any(tag.get("name") == HUMAN_REVIEW_TAG for tag in tags))
+        return flags
+
     def __len__(self) -> int:
         return len(self.samples)
 
@@ -158,4 +172,11 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         if self.augment:
             image, mask, pith_xy = augment_sample(image, mask, pith_xy)
 
-        return {"image": image, "mask": mask, "pith_xy": pith_xy, "path": str(sample["center"])}
+        human = any(tag.get("name") == HUMAN_REVIEW_TAG for tag in annotation.get("tags", []))
+        return {
+            "image": image,
+            "mask": mask,
+            "pith_xy": pith_xy,
+            "human": torch.tensor(human),
+            "path": str(sample["center"]),
+        }

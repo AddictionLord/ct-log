@@ -473,6 +473,73 @@ Conclusion: tuning on 20 training logs has saturated (models within ~0.005 knot)
 lever is more distinct training logs; with augmentation in place, more backbone capacity is
 the second candidate.
 
+## kwp-ds-v3 runs: more auto logs and human-frame weighting (2026-10-03)
+
+kwp-ds-v3 = v2 + 31 new auto-labelled logs (same YOLO-seg teacher, auto pith snapped to the
+darkest pixel in 5x5): 51 train logs, ~15.3k frames (2.6x v2); val/test unchanged. Recipe as the
+best v2 run (784, last 4 blocks lr 3e-5, head 1e-4, bf16, augmentation), 12 epochs (~1.5x the v2
+step budget). `human_frame_weight` samples `bumaska`-tagged frames (all of log 2 + 27 frames of log
+08, 317 of 15265) w times as often.
+
+Knot IoU, paired block bootstrap over human logs 1+4+10 (`scripts/eval_per_log.py`):
+
+| model | knot pooled | knot log 10 | pith median pooled | pith log 10 |
+|---|---|---|---|---|
+| v2 aug 20+20 (reference) | 0.685 | 0.677 | 6.04 px | 4.85 px |
+| v3 uniform | 0.676 | 0.668 | 5.09 px | 5.20 px |
+| v3 human 5x | 0.682 | 0.674 | 5.99 px | 5.03 px |
+| v3 human 10x | 0.680 | 0.670 | 5.71 px | 5.19 px |
+
+Paired differences (pooled knot): v3 uniform - v2 = -0.0096 [-0.0135, -0.0053]; human 5x - v3
+uniform = +0.0060 [+0.0028, +0.0092]; human 10x - human 5x = -0.0012 [-0.0050, +0.0022];
+v2 - human 5x = +0.0036 [-0.0008, +0.0075] (significant only on log 4, +0.012).
+
+Findings:
+
+- **More teacher-labelled logs alone made knots worse.** With the human share diluted from ~4.9%
+  (v2) to ~2.1% of draws, the student moved back to the teacher's level (YOLO-seg teacher on log
+  10: Dice 0.804, i.e. IoU ~0.672; v3 uniform 0.668).
+- **Human-frame weighting recovers most of it and saturates at ~5x.** 10x is on par with 5x.
+  Human labels are worth several times more than teacher labels; further gains need more
+  distinct human-reviewed logs rather than heavier weighting of the one we have.
+- **Pith moves the other way**: uniform v3 has the best pith (5.1 px pooled); weighting human
+  frames pulls it back to ~6 px, likely because human pith points and the snapped auto pith
+  points are not consistent. `human_weight_applies_to_pith: false` keeps the 5x sampling for
+  segmentation but weights human frames 1/w in the pith loss.
+
+### Warm restart of human 5x with decoupled pith (2026-10-04)
+
+12 more epochs from the final 5x weights (`init_from`), fresh cosine at half the peak LR, 5x human
+sampling, human frames weighted 1/5 in the pith loss.
+
+| model | knot pooled | knot log 1 / 4 / 10 | pith median pooled | pith log 10 |
+|---|---|---|---|---|
+| v3 human 5x | 0.682 | 0.686 / 0.682 / 0.674 | 5.99 px | 5.03 px |
+| **v3 human 5x, 12+12 ep, pith decoupled** | **0.684** | 0.689 / 0.687 / 0.670 | **5.13 px** | 5.01 px |
+| v2 aug 20+20 | 0.685 | 0.683 / 0.694 / 0.677 | 6.04 px | 4.85 px |
+| v3 uniform | 0.676 | 0.679 / 0.677 / 0.668 | 5.09 px | 5.20 px |
+
+Paired vs v3 human 5x (pooled): warm restart knot +0.0021 [-0.0006, +0.0049], fg +0.0015
+[+0.0001, +0.0029]; v2 +0.0036 [-0.0008, +0.0075].
+
+- **Undertraining is at most a small effect**: 12 more epochs add ~+0.002 knot (not significant
+  pooled; +0.005 on log 4, -0.004 on log 10, both within noise). Val knot peaked at 0.694 (ep 9),
+  the highest of all runs, but test log 10 did not move.
+- **The pith decoupling works**: pooled pith 5.99 -> 5.13 px (log 4: 6.14 -> 4.41 px), back to the
+  level of uniform v3, while keeping the knot gain of human weighting. (The pith change is
+  confounded with the continuation, but the continuation alone did not move pith in v2.)
+- **Best overall model so far**: knot on par with v2 aug (pooled 0.684 vs 0.685, v2 still ahead on
+  log 4 and log 10 by ~0.007, within noise) and the best pith of all knot-competitive models.
+  Checkpoint: `ckpt/kwp_v3_784_last4_aug_humanw5_cont_bf16.*` (head, `.backbone.pth`,
+  `.pith.pth`) on euler.
+
+QA of the 31 new auto logs (Annotations agent, `logs/kwp_ds_v3/qa_auto_logs.{txt,json}`): teacher
+confidence, near-threshold share, outer-ring spill and wood-mask stability match the v2 auto logs
+(conf mean 0.559 vs 0.561; spill 0.048 vs 0.045). Only log 50 is out of distribution (dark,
+irregular heartwood; lowest confidence 0.476, likely missed knots); logs 41/42/53 have mildly more
+ring spill (~0.10 vs v2 max 0.08). Per-log label quality does not explain v3 < v2; the mixture
+share of human vs teacher labels does.
+
 ## Later options — superseded
 
 The original plan was a ladder: **A** (channel-stacked 2.5D) → **B**

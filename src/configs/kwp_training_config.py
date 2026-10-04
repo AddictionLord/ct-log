@@ -60,6 +60,8 @@ class KwpTrainingConfig(BaseModel):
     backbone_lr: float = Field(1e-5, gt=0)
     augment: bool = False
     init_from: Optional[Path] = None
+    human_frame_weight: float = Field(1.0, gt=0)
+    human_weight_applies_to_pith: bool = True
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     resume: bool = False
