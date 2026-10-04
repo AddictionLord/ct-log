@@ -547,6 +547,23 @@ v1 (~+0.05), fine-tuning the last 4 blocks over frozen (+0.016 pooled, +0.04 on 
 320. Future config comparisons need 2-3 seeds per arm (or variance reduction: SWA/EMA weights,
 ensembles).
 
+### EMA of the trainable weights (2026-10-04)
+
+`ema_decay: 0.9995` (~1 epoch horizon), v3 human 5x with decoupled pith, two identical seeds.
+Paired over logs 1+4+10:
+
+| pair | knot pooled (each) | seed-pair knot diff pooled | pith median pooled (each) |
+|---|---|---|---|
+| no EMA (5x, 5x repeat; pith not decoupled) | 0.682 / 0.673 | -0.0090 [-0.0125, -0.0057] | 5.99 / 5.99 px |
+| EMA (s1, s2; pith decoupled) | 0.683 / 0.678 | -0.0051 [-0.0084, -0.0019] | 4.98 / 4.76 px |
+
+- Seed spread roughly halves (0.009 -> 0.005 pooled; log 10 0.018 -> 0.003), mean knot unchanged
+  (0.6805 vs 0.6775, within noise). One pair per arm, so this is indicative, not proven.
+- Pith improves by ~1 px pooled and is consistent across the two EMA seeds (log 10: 4.38 / 4.38 px
+  vs 5.03 / 5.44 px). Confounded with the decoupled pith loss (decoupling alone, in the warm
+  restart, gave 5.13 px).
+- EMA costs nothing at train time; keep it on (`ema_decay: 0.9995`) for future runs.
+
 Student-vs-teacher disagreement (best model vs v3 auto labels, knot IoU; logs were in training, so
 only the ranking matters): 50 0.596, 09 0.685, 52 0.698, 06 0.701, 42 0.701, 53 0.705, 41 0.730,
 3 0.763, 08 0.779, 05 0.784. Used to rank logs for human review.
