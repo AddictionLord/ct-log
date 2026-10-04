@@ -533,6 +533,24 @@ Paired vs v3 human 5x (pooled): warm restart knot +0.0021 [-0.0006, +0.0049], fg
   Checkpoint: `ckpt/kwp_v3_784_last4_aug_humanw5_cont_bf16.*` (head, `.backbone.pth`,
   `.pith.pth`) on euler.
 
+### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
+
+An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
+log 1 -0.009 [-0.014, -0.003], log 4 -0.002 [-0.006, +0.003], log 10 -0.018 [-0.028, -0.009],
+pooled **-0.009 [-0.013, -0.006]** knot (test log 10: 0.674 vs 0.655). The bootstrap intervals
+exclude 0 because they only capture evaluation noise; training noise of a fine-tuned 784 run is
+~0.01 knot pooled and ~0.02 on a single log, about 10x the frozen-backbone value (0.001 at 320).
+
+Consequence: single-run differences below ~0.01 (v3 uniform vs v2 -0.010, human 5x vs uniform
++0.006, warm restart +0.002, 10x vs 5x) are not conclusive. Robust so far: kwp-ds-v2 labels over
+v1 (~+0.05), fine-tuning the last 4 blocks over frozen (+0.016 pooled, +0.04 on log 10), 784 over
+320. Future config comparisons need 2-3 seeds per arm (or variance reduction: SWA/EMA weights,
+ensembles).
+
+Student-vs-teacher disagreement (best model vs v3 auto labels, knot IoU; logs were in training, so
+only the ranking matters): 50 0.596, 09 0.685, 52 0.698, 06 0.701, 42 0.701, 53 0.705, 41 0.730,
+3 0.763, 08 0.779, 05 0.784. Used to rank logs for human review.
+
 QA of the 31 new auto logs (Annotations agent, `logs/kwp_ds_v3/qa_auto_logs.{txt,json}`): teacher
 confidence, near-threshold share, outer-ring spill and wood-mask stability match the v2 auto logs
 (conf mean 0.559 vs 0.561; spill 0.048 vs 0.045). Only log 50 is out of distribution (dark,
