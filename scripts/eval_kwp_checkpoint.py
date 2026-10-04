@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
-from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
+from src.segmentation_head import build_pith_head, create_dinov3_segmentor
 from src.train_kwp import evaluate, make_transform
 import torch
 
@@ -50,7 +50,7 @@ def main() -> None:
     if config.pith_regression and resume_path.exists():
         state = torch.load(resume_path, map_location="cpu")
         if state.get("pith_head") is not None:
-            pith_head = PithRegressionHead(feature_dim=1024 * config.n_layers)
+            pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
             pith_head.load_state_dict(state["pith_head"])
             pith_head = pith_head.to(device).eval()
 

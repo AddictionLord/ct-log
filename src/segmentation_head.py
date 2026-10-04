@@ -106,6 +106,78 @@ class PithRegressionHead(nn.Module):
         return self.mlp(pooled)
 
 
+class PithHeatmapHead(nn.Module):
+    """Predicts normalized pith (x, y) as the soft-argmax of a spatial heatmap (DSNT-style).
+
+    Unlike PithRegressionHead, which mean-pools all patches and must recover absolute position
+    from the pooled vector, this head keeps the patch grid: a small conv decoder produces one
+    logit map at 4x the patch-grid resolution, a softmax turns it into a probability map and the
+    expected pixel-centre coordinate is the prediction (differentiable, sub-pixel).
+    """
+
+    def __init__(self, feature_dim: int, input_size: int, hidden_dim: int = 256):
+        """Initialize the heatmap head.
+
+        Args:
+            feature_dim: Feature dimension of the concatenated patch tokens.
+            input_size: Square input resolution; the patch grid is input_size // 16.
+            hidden_dim: Channels after the 1x1 reduction.
+        """
+        super().__init__()
+        self.grid = input_size // 16
+        self.net = nn.Sequential(
+            nn.Conv2d(feature_dim, hidden_dim, 1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(hidden_dim, 128, 4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 1, 3, padding=1),
+        )
+
+    def forward(self, patch_features: torch.Tensor) -> torch.Tensor:
+        """Predict normalized pith coordinates.
+
+        Args:
+            patch_features: [B, num_patches, feature_dim] patch tokens.
+
+        Returns:
+            torch.Tensor: [B, 2] normalized (x, y) in [0, 1].
+        """
+        batch_size, _, feature_dim = patch_features.shape
+        spatial = patch_features.view(batch_size, self.grid, self.grid, feature_dim).permute(0, 3, 1, 2)
+        logits = self.net(spatial).float().flatten(1)
+        height = width = self.grid * 4
+        probs = logits.softmax(dim=1).view(batch_size, height, width)
+        xs = (torch.arange(width, device=probs.device, dtype=probs.dtype) + 0.5) / width
+        ys = (torch.arange(height, device=probs.device, dtype=probs.dtype) + 0.5) / height
+        x = (probs.sum(dim=1) * xs).sum(dim=1)
+        y = (probs.sum(dim=2) * ys).sum(dim=1)
+        return torch.stack([x, y], dim=1)
+
+
+def build_pith_head(head_type: str, feature_dim: int, input_size: int) -> nn.Module:
+    """Create the pith head selected by the training config.
+
+    Args:
+        head_type: "pooled_mlp" (global mean-pool + MLP) or "heatmap" (soft-argmax heatmap).
+        feature_dim: Feature dimension of the concatenated patch tokens.
+        input_size: Square input resolution.
+
+    Returns:
+        nn.Module: pith head mapping [B, num_patches, feature_dim] to [B, 2] normalized (x, y).
+
+    Raises:
+        ValueError: For an unknown head type.
+    """
+    if head_type == "pooled_mlp":
+        return PithRegressionHead(feature_dim=feature_dim)
+    if head_type == "heatmap":
+        return PithHeatmapHead(feature_dim=feature_dim, input_size=input_size)
+    msg = f"Unknown pith head type {head_type}"
+    raise ValueError(msg)
+
+
 def create_dinov3_segmentor(
     backbone_weights: str, num_classes: int = 150, input_size: int = 224, n_layers: int = 1
 ) -> Tuple[nn.Module, nn.Module]:

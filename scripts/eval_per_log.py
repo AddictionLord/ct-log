@@ -7,7 +7,7 @@ import numpy as np
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.dataset.kwp_mask import KwpMaskBuilder
-from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
+from src.segmentation_head import build_pith_head, create_dinov3_segmentor
 from src.train_kwp import extract_features, make_transform, pith_pixel_errors
 import torch
 
@@ -71,7 +71,7 @@ def evaluate_model(
         backbone.load_state_dict(state["backbone"], strict=False)
     pith_head = None
     if config.pith_regression and state.get("pith_head") is not None:
-        pith_head = PithRegressionHead(feature_dim=1024 * config.n_layers)
+        pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
         pith_head.load_state_dict(state["pith_head"])
         pith_head = pith_head.to(device).eval()
     backbone, seg_head = backbone.to(device).eval(), seg_head.to(device).eval()

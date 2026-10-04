@@ -14,7 +14,7 @@ from src.dataset.kwp_mask import KwpMaskBuilder
 from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
-from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
+from src.segmentation_head import build_pith_head, create_dinov3_segmentor
 from src.utils.ema import WeightEma
 from src.utils.checkpoints import save_best_copy
 from src.utils.class_balance import (
@@ -210,13 +210,19 @@ def compute_loss(
     return config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
 
 
-def pith_loss(predictions: torch.Tensor, targets: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
-    """MSE on normalized pith coordinates, skipping slices with no pith.
+def pith_loss(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    weights: Optional[torch.Tensor] = None,
+    loss_type: str = "mse",
+) -> torch.Tensor:
+    """MSE (or L1) on normalized pith coordinates, skipping slices with no pith.
 
     Args:
         predictions: [B, 2] predicted normalized (x, y).
         targets: [B, 3] ground-truth (x, y, valid).
         weights: Optional [B] per-slice weights; the loss is their weighted mean over valid slices.
+        loss_type: "mse" (squared error) or "l1" (absolute error), on normalized coordinates.
 
     Returns:
         torch.Tensor: Scalar loss; zero when no slice in the batch has a pith.
@@ -224,7 +230,8 @@ def pith_loss(predictions: torch.Tensor, targets: torch.Tensor, weights: Optiona
     valid = targets[:, 2] > 0
     if not valid.any():
         return predictions.sum() * 0.0
-    per_slice = ((predictions[valid] - targets[valid, :2]) ** 2).mean(dim=1)
+    delta = predictions[valid] - targets[valid, :2]
+    per_slice = (delta.abs() if loss_type == "l1" else delta**2).mean(dim=1)
     if weights is None:
         return per_slice.mean()
     slice_weights = weights[valid]
@@ -441,7 +448,7 @@ def main() -> None:
     pith_head = None
     trainable = list(seg_head.parameters())
     if config.pith_regression:
-        pith_head = PithRegressionHead(feature_dim=1024 * config.n_layers).to(device)
+        pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0]).to(device)
         trainable += list(pith_head.parameters())
 
     backbone_params = unfreeze_last_blocks(model, config.backbone_trainable_blocks)
@@ -576,7 +583,7 @@ def main() -> None:
                     human = batch["human"].to(device)
                     pith_weights = torch.where(human, 1.0 / config.human_frame_weight, 1.0)
                 loss = loss + config.pith_loss_weight * pith_loss(
-                    pith_head(features), batch["pith_xy"].to(device), pith_weights
+                    pith_head(features), batch["pith_xy"].to(device), pith_weights, config.pith_loss_type
                 )
             loss.backward()
             optimizer.step()

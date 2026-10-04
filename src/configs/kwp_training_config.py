@@ -65,6 +65,8 @@ class KwpTrainingConfig(BaseModel):
     ema_decay: Optional[float] = Field(None, gt=0, lt=1)
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
+    pith_head_type: Literal["pooled_mlp", "heatmap"] = "pooled_mlp"
+    pith_loss_type: Literal["mse", "l1"] = "mse"
     resume: bool = False
     log_interval: int = 50
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/kwp_seg_head.pth")
