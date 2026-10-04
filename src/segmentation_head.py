@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import Tuple
 
 import torch
@@ -178,6 +180,27 @@ def build_pith_head(head_type: str, feature_dim: int, input_size: int) -> nn.Mod
     raise ValueError(msg)
 
 
+def dinov3_repo_dir() -> str:
+    """Locate the local DINOv3 torch.hub repo on this machine.
+
+    Order: $DINOV3_REPO_DIR, <repo root>/dinov3 (euler: ~/work/ctlog-eval/dinov3), then a sibling
+    checkout next to the repo (local: ~/code/dinov3).
+
+    Returns:
+        str: Directory containing hubconf.py.
+
+    Raises:
+        FileNotFoundError: If no candidate contains hubconf.py.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [os.environ.get("DINOV3_REPO_DIR"), repo_root / "dinov3", repo_root.parent / "dinov3"]
+    for candidate in candidates:
+        if candidate and (Path(candidate) / "hubconf.py").exists():
+            return str(candidate)
+    msg = f"No DINOv3 hub repo with hubconf.py among {candidates}"
+    raise FileNotFoundError(msg)
+
+
 def create_dinov3_segmentor(
     backbone_weights: str, num_classes: int = 150, input_size: int = 224, n_layers: int = 1
 ) -> Tuple[nn.Module, nn.Module]:
@@ -192,7 +215,7 @@ def create_dinov3_segmentor(
     Returns:
         Tuple of (backbone, segmentation_head)
     """
-    REPO_DIR = "/home/mary/code/dinov3"
+    REPO_DIR = dinov3_repo_dir()
 
     # Load frozen backbone
     backbone = torch.hub.load(
