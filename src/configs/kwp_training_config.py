@@ -62,6 +62,7 @@ class KwpTrainingConfig(BaseModel):
     init_from: Optional[Path] = None
     human_frame_weight: float = Field(1.0, gt=0)
     human_weight_applies_to_pith: bool = True
+    ema_decay: Optional[float] = Field(None, gt=0, lt=1)
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     resume: bool = False

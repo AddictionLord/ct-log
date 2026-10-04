@@ -15,6 +15,7 @@ from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import PithRegressionHead, create_dinov3_segmentor
+from src.utils.ema import WeightEma
 from src.utils.checkpoints import save_best_copy
 from src.utils.class_balance import (
     capped_inverse_frequency_weights,
@@ -209,9 +210,7 @@ def compute_loss(
     return config.distribution_loss_weight * distribution_loss + config.district_loss_weight * district_loss
 
 
-def pith_loss(
-    predictions: torch.Tensor, targets: torch.Tensor, weights: Optional[torch.Tensor] = None
-) -> torch.Tensor:
+def pith_loss(predictions: torch.Tensor, targets: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
     """MSE on normalized pith coordinates, skipping slices with no pith.
 
     Args:
@@ -491,6 +490,11 @@ def main() -> None:
     if config.init_from is not None and not (config.resume and resume_path.exists()):
         init_weights(config.init_from, seg_head, pith_head, model if finetune else None)
         print(f"Initialized weights from {config.init_from}")
+    ema = (
+        WeightEma([seg_head, pith_head] if pith_head is not None else [seg_head], backbone_params, config.ema_decay)
+        if config.ema_decay
+        else None
+    )
     if config.resume and resume_path.exists():
         state = torch.load(resume_path)
         seg_head.load_state_dict(state["seg_head"])
@@ -523,6 +527,14 @@ def main() -> None:
             pith_head.load_state_dict(state["pith_head"])
         if scheduler is not None:
             scheduler.load_state_dict(state["scheduler"])
+        if (ema is not None) != (state.get("ema") is not None):
+            message = (
+                f"Resume mismatch: ema_decay={config.ema_decay} but checkpoint "
+                f"{'has' if state.get('ema') is not None else 'lacks'} EMA state."
+            )
+            raise ValueError(message)
+        if ema is not None:
+            ema.load_state_dict(state["ema"])
         start_epoch = state["epoch"] + 1
         best_fg_iou = state["best_fg_iou"]
         best_smoothed = state["best_smoothed"]
@@ -568,6 +580,8 @@ def main() -> None:
                 )
             loss.backward()
             optimizer.step()
+            if ema is not None:
+                ema.update()
 
             losses.append(loss.detach().cpu().item())
             if config.log_interval and batch_idx % config.log_interval == 0:
@@ -575,6 +589,10 @@ def main() -> None:
 
         train_loss = float(torch.tensor(losses).mean().item())
 
+        # Everything from validation to best-model saving sees the EMA weights; the raw weights
+        # are swapped back before the resume state is written and the next epoch trains.
+        if ema is not None:
+            ema.swap()
         val_loss, val_metrics = evaluate(
             model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights
         )
@@ -605,7 +623,14 @@ def main() -> None:
         # bias/variance signal (both low => underfit, train >> val => overfit).
         if config.train_eval_interval and epoch_idx % config.train_eval_interval == 0:
             train_eval_loss, train_eval_metrics = evaluate(
-                model, seg_head, loaders.get("train_eval", loaders["train"]), transform, device, config, pith_head, class_weights
+                model,
+                seg_head,
+                loaders.get("train_eval", loaders["train"]),
+                transform,
+                device,
+                config,
+                pith_head,
+                class_weights,
             )
             tracker.add(
                 epoch_idx, "train_eval", train_eval_loss, train_eval_metrics["mean_iou_fg"], **train_eval_metrics
@@ -685,6 +710,8 @@ def main() -> None:
         info.current_epoch = epoch_idx
         info.last_epoch_minutes = round((time.monotonic() - epoch_start) / 60, 2)
 
+        if ema is not None:
+            ema.swap()
         if config.resume:
             config.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             # Write to a temp file and rename: a kill mid-torch.save would leave
@@ -698,6 +725,7 @@ def main() -> None:
                     "pith_head": pith_head.state_dict() if pith_head is not None else None,
                     "backbone": backbone_state(model, backbone_params) if finetune else None,
                     "optimizer": optimizer.state_dict(),
+                    "ema": ema.state_dict() if ema is not None else None,
                     "scheduler": scheduler.state_dict() if scheduler is not None else None,
                     "best_fg_iou": best_fg_iou,
                     "best_smoothed": best_smoothed,
