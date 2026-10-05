@@ -583,7 +583,22 @@ weight 10. Same run as the frozen v2 784 40-epoch bf16 baseline except the pith 
 
 Pith reaches the level of the YOLO 2-class OBB detector (0.81 px median on log 10) already after
 one epoch (val 1.2 px), with no effect on segmentation. The heatmap head is the default choice for
-pith from now on; next run puts it into the best fine-tuned v3 recipe.
+pith from now on.
+
+**Best model (2026-10-05)**: the best fine-tuned v3 recipe (784, last 4 blocks lr 3e-5, aug, human
+5x with decoupled pith loss, EMA 0.9995, 12 epochs) with the heatmap pith head
+(`src/configs/train_kwp_v3_784_last4_aug_humanw5_ema_pithhm_bf16.yaml`). Paired over logs 1+4+10:
+
+| model | knot pooled | knot log 10 | pith median pooled | pith log 1 / 4 / 10 |
+|---|---|---|---|---|
+| **EMA + heatmap pith** | 0.683 | 0.671 | **0.78 px** | 0.78 / 0.68 / 0.85 px |
+| EMA s1 (pooled-MLP pith) | 0.683 | 0.672 | 4.98 px | 6.83 / 4.29 / 4.38 px |
+| v2 aug 20+20 | 0.685 | 0.677 | 6.04 px | 6.57 / 6.30 / 4.85 px |
+
+Knot vs EMA s1: +0.0000 [-0.0038, +0.0034]; v2 aug vs it: +0.0020 [-0.0019, +0.0054] (both ties).
+Test log 10: knot 0.671, fg 0.823, pith median 0.85 px, mean 0.98 px, p90 1.64 px. Checkpoints:
+`ckpt/kwp_v3_784_last4_aug_humanw5_ema_pithhm_bf16.{pth,backbone.pth,pith.pth}` on euler (EMA
+weights), best copy `ckpt_local/kwp_v3_784_last4_aug_humanw5_ema_pithhm_bf16/.../seg_head_epoch_11.pth`.
 
 Student-vs-teacher disagreement (best model vs v3 auto labels, knot IoU; logs were in training, so
 only the ranking matters): 50 0.596, 09 0.685, 52 0.698, 06 0.701, 42 0.701, 53 0.705, 41 0.730,
