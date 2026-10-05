@@ -564,6 +564,27 @@ Paired over logs 1+4+10:
   restart, gave 5.13 px).
 - EMA costs nothing at train time; keep it on (`ema_decay: 0.9995`) for future runs.
 
+### Pith: heatmap / soft-argmax head (2026-10-05)
+
+The original pith head (`PithRegressionHead`) mean-pools all patch tokens and regresses (x, y)
+with an MLP, so it can only recover position indirectly from the pooled vector. Diagnosed on the
+best fine-tuned model: correlation with the true pith 0.85 on log 10, but worse than a constant
+(the log's mean pith) on train log 2; on a synthetic task where position is only encoded in the
+patch grid it cannot localize at all (246 px vs 8.6 px for a heatmap head).
+
+`pith_head_type: heatmap` (`PithHeatmapHead`) keeps the 49x49 patch grid, decodes a 196x196 logit
+map and predicts the soft-argmax coordinate (DSNT-style); trained with `pith_loss_type: l1`,
+weight 10. Same run as the frozen v2 784 40-epoch bf16 baseline except the pith head:
+
+| pith head | test log 10 pith median | mean | p90 | val pith median (ep 39) | test knot |
+|---|---|---|---|---|---|
+| pooled MLP (baseline) | 4.72 px (4.44 in per-log eval) | – | – | 7.0 px | 0.643 |
+| **heatmap / soft-argmax** | **1.05 px** | 1.19 px | 2.16 px | 0.87 px | 0.644 |
+
+Pith reaches the level of the YOLO 2-class OBB detector (0.81 px median on log 10) already after
+one epoch (val 1.2 px), with no effect on segmentation. The heatmap head is the default choice for
+pith from now on; next run puts it into the best fine-tuned v3 recipe.
+
 Student-vs-teacher disagreement (best model vs v3 auto labels, knot IoU; logs were in training, so
 only the ranking matters): 50 0.596, 09 0.685, 52 0.698, 06 0.701, 42 0.701, 53 0.705, 41 0.730,
 3 0.763, 08 0.779, 05 0.784. Used to rank logs for human review.
