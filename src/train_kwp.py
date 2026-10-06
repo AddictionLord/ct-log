@@ -14,7 +14,7 @@ from src.dataset.kwp_mask import KwpMaskBuilder
 from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
-from src.segmentation_head import build_pith_head, create_dinov3_segmentor
+from src.segmentation_head import build_kwp_model
 from src.utils.ema import WeightEma
 from src.utils.checkpoints import save_best_copy
 from src.utils.class_balance import (
@@ -436,19 +436,12 @@ def main() -> None:
     logger.log_params(run_params)
     logger.log_dict(run_params, "config.yaml")
 
-    model, seg_head = create_dinov3_segmentor(
-        backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes,
-        input_size=config.resolution[0],
-        n_layers=config.n_layers,
-    )
+    model, seg_head, pith_head = build_kwp_model(config)
     model = model.to(device)
     seg_head = seg_head.to(device)
-
-    pith_head = None
     trainable = list(seg_head.parameters())
-    if config.pith_regression:
-        pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0]).to(device)
+    if pith_head is not None:
+        pith_head = pith_head.to(device)
         trainable += list(pith_head.parameters())
 
     backbone_params = unfreeze_last_blocks(model, config.backbone_trainable_blocks)

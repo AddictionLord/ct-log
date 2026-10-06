@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.kwp_mask import KwpMaskBuilder
-from src.segmentation_head import create_dinov3_segmentor
+from src.segmentation_head import build_kwp_model
 from src.train_kwp import extract_features, make_transform
 import torch
 import torch.nn.functional as F
@@ -26,12 +26,7 @@ def main() -> None:
 
     config = KwpTrainingConfig.from_yaml(args.config)
     device = torch.device("cuda")
-    backbone, seg_head = create_dinov3_segmentor(
-        backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes,
-        input_size=config.resolution[0],
-        n_layers=config.n_layers,
-    )
+    backbone, seg_head, _ = build_kwp_model(config)
     state = torch.load(args.best_copy, map_location="cpu")
     seg_head.load_state_dict(state["seg_head"])
     if state.get("backbone") is not None:

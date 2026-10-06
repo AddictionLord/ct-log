@@ -7,7 +7,7 @@ import numpy as np
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.dataset.kwp_mask import KwpMaskBuilder
-from src.segmentation_head import build_pith_head, create_dinov3_segmentor
+from src.segmentation_head import build_kwp_model
 from src.train_kwp import extract_features, make_transform, pith_pixel_errors
 import torch
 
@@ -59,21 +59,16 @@ def evaluate_model(
     config_path: Path, copy_path: Path, logs: List[str], class_names: List[str], device: torch.device
 ) -> Dict[str, Dict[str, np.ndarray]]:
     config = KwpTrainingConfig.from_yaml(config_path)
-    backbone, seg_head = create_dinov3_segmentor(
-        backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes,
-        input_size=config.resolution[0],
-        n_layers=config.n_layers,
-    )
+    backbone, seg_head, pith_head = build_kwp_model(config)
     state = torch.load(copy_path, map_location="cpu")
     seg_head.load_state_dict(state["seg_head"])
     if state.get("backbone") is not None:
         backbone.load_state_dict(state["backbone"], strict=False)
-    pith_head = None
-    if config.pith_regression and state.get("pith_head") is not None:
-        pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
+    if pith_head is not None and state.get("pith_head") is not None:
         pith_head.load_state_dict(state["pith_head"])
         pith_head = pith_head.to(device).eval()
+    else:
+        pith_head = None
     backbone, seg_head = backbone.to(device).eval(), seg_head.to(device).eval()
     transform = make_transform()
 

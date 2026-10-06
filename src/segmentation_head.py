@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Optional, Tuple
 
 import torch
 from torch import nn
+
+from src.unet_model import CachedPithHead, ImageBackbone, UnetSegPith, soft_argmax
 
 
 class SimpleSegmentationHead(nn.Module):
@@ -148,14 +150,7 @@ class PithHeatmapHead(nn.Module):
         """
         batch_size, _, feature_dim = patch_features.shape
         spatial = patch_features.view(batch_size, self.grid, self.grid, feature_dim).permute(0, 3, 1, 2)
-        logits = self.net(spatial).float().flatten(1)
-        height = width = self.grid * 4
-        probs = logits.softmax(dim=1).view(batch_size, height, width)
-        xs = (torch.arange(width, device=probs.device, dtype=probs.dtype) + 0.5) / width
-        ys = (torch.arange(height, device=probs.device, dtype=probs.dtype) + 0.5) / height
-        x = (probs.sum(dim=1) * xs).sum(dim=1)
-        y = (probs.sum(dim=2) * ys).sum(dim=1)
-        return torch.stack([x, y], dim=1)
+        return soft_argmax(self.net(spatial)[:, 0])
 
 
 def build_pith_head(head_type: str, feature_dim: int, input_size: int) -> nn.Module:
@@ -238,3 +233,45 @@ def create_dinov3_segmentor(
     )
 
     return backbone, segmentation_head
+
+
+def build_kwp_model(config: Any) -> Tuple[nn.Module, nn.Module, Optional[nn.Module]]:
+    """Create backbone, segmentation head and optional pith head for a KwpTrainingConfig.
+
+    "dinov3": frozen/fine-tunable DINOv3 backbone with SimpleSegmentationHead and the configured pith head.
+    "unet": an image passthrough "backbone" and a segmentation_models_pytorch network that predicts
+    the class logits and (with pith_regression) one extra pith heatmap channel at full resolution.
+
+    Args:
+        config: KwpTrainingConfig.
+
+    Returns:
+        Tuple[nn.Module, nn.Module, Optional[nn.Module]]: backbone, segmentation head, pith head (or None).
+
+    Raises:
+        ValueError: For an unknown model type.
+    """
+    if config.model_type == "dinov3":
+        backbone, seg_head = create_dinov3_segmentor(
+            backbone_weights=config.backbone_weights,
+            num_classes=config.num_classes,
+            input_size=config.resolution[0],
+            n_layers=config.n_layers,
+        )
+        pith_head = None
+        if config.pith_regression:
+            pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
+        return backbone, seg_head, pith_head
+    if config.model_type == "unet":
+        seg_head = UnetSegPith(
+            arch=config.unet_arch,
+            encoder=config.unet_encoder,
+            num_classes=config.num_classes,
+            pith=config.pith_regression,
+            input_size=config.resolution[0],
+            bf16=config.backbone_bf16,
+        )
+        pith_head = CachedPithHead(seg_head) if config.pith_regression else None
+        return ImageBackbone(), seg_head, pith_head
+    msg = f"Unknown model type {config.model_type}"
+    raise ValueError(msg)

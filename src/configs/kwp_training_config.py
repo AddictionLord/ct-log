@@ -66,6 +66,9 @@ class KwpTrainingConfig(BaseModel):
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     pith_head_type: Literal["pooled_mlp", "heatmap"] = "pooled_mlp"
+    model_type: Literal["dinov3", "unet"] = "dinov3"
+    unet_arch: str = "Unet"
+    unet_encoder: str = "resnet50"
     pith_loss_type: Literal["mse", "l1"] = "mse"
     resume: bool = False
     log_interval: int = 50

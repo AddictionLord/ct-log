@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
-from src.segmentation_head import build_pith_head, create_dinov3_segmentor
+from src.segmentation_head import build_kwp_model
 from src.train_kwp import evaluate, make_transform
 import torch
 
@@ -33,12 +33,7 @@ def main() -> None:
         dataset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
     )
 
-    model, seg_head = create_dinov3_segmentor(
-        backbone_weights=config.backbone_weights,
-        num_classes=config.num_classes,
-        input_size=config.resolution[0],
-        n_layers=config.n_layers,
-    )
+    model, seg_head, built_pith_head = build_kwp_model(config)
     seg_head.load_state_dict(torch.load(checkpoint, map_location="cpu"))
     model = model.to(device).eval()
     seg_head = seg_head.to(device).eval()
@@ -49,8 +44,8 @@ def main() -> None:
     resume_path = checkpoint.with_suffix(".resume.pth")
     if config.pith_regression and resume_path.exists():
         state = torch.load(resume_path, map_location="cpu")
-        if state.get("pith_head") is not None:
-            pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
+        if state.get("pith_head") is not None and built_pith_head is not None:
+            pith_head = built_pith_head
             pith_head.load_state_dict(state["pith_head"])
             pith_head = pith_head.to(device).eval()
 
