@@ -1,0 +1,128 @@
+# Best recipe (v3, 784, last 4 blocks, aug, human 5x, EMA, heatmap pith) on the SAME human split as the
+# YOLO-seg teacher yolo11n_seg_v5_val10: human logs 1, 2, 4 and the 27 human frames of 08 in training
+# (899 human frames, as the teacher), log 10 for validation and test (the teacher also selected on 10).
+# Question: is the student's 0.07 pooled-IoU gap to the teacher on log 10 (0.676 vs 0.745) a data
+# confound (317 vs 899 human frames) or the model? Breakdown on log 10: the gap is mostly false positives
+# at the edges of real knots (student knots too fat), not thin-knot recall.
+
+dataset_version: kwp-ds-v3
+backbone_bf16: true
+backbone_trainable_blocks: 4
+backbone_lr: 0.00003
+augment: true
+human_frame_weight: 5.0
+human_weight_applies_to_pith: false
+ema_decay: 0.9995
+
+num_classes: 3
+lr: 0.0001
+num_epochs: 12
+resolution: [784, 784]
+backbone_weights: /home/jovyan/work/ctlog-eval/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /home/jovyan/work/ctlog-eval/ckpt/kwp_v3_784_last4_aug_humanw5_ema_pithhm_teachersplit_bf16.pth
+
+window: 1
+n_layers: 4
+pith_radius: 3
+
+pith_regression: true
+pith_loss_weight: 10.0
+pith_head_type: heatmap
+pith_loss_type: l1
+
+train_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/2
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/3
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/05
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/06
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/08
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/09
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/11
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/13
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/14
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/15
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/16
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/17
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/18
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/19
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/20
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/21
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/23
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/24
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/25
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/26
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/27
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/28
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/29
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/30
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/31
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/33
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/34
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/36
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/37
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/38
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/39
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/40
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/41
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/42
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/43
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/44
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/46
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/47
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/48
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/49
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/50
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/51
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/52
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/53
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/54
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/55
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/56
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/57
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/58
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/59
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/60
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/1
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/4
+val_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/10
+test_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/10
+train_probe_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/2
+
+batch_size: 8
+num_workers: 6
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 5.0
+tversky_alpha: 0.3
+tversky_beta: 0.7
+ignore_background_in_tversky: true
+
+class_weighting: capped_inverse_frequency
+class_weight_power: 1.0
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
+
+lr_schedule: cosine
+
+log_interval: 200
+train_eval_interval: 4
+
+resume: true
+
+use_local_logger: true
+local_log_dir: /home/jovyan/work/ctlog-eval/logs/kwp_v3_784_last4_aug_humanw5_ema_pithhm_teachersplit_bf16
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-v1
+mlflow_run_name: kwp-v3-784-last4-aug-humanw5-ema-pithhm-teachersplit-bf16
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
+
+mlflow_model_min_improvement: 0.005
+local_checkpoint_dir: /home/jovyan/work/ctlog-eval/ckpt_local/kwp_v3_784_last4_aug_humanw5_ema_pithhm_teachersplit_bf16
+local_checkpoint_keep: 5
+viz_interval: 5
+viz_num_frames: 4
