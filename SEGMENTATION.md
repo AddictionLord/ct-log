@@ -496,9 +496,12 @@ v2 - human 5x = +0.0036 [-0.0008, +0.0075] (significant only on log 4, +0.012).
 
 Findings:
 
-- **More teacher-labelled logs alone made knots worse.** With the human share diluted from ~4.9%
-  (v2) to ~2.1% of draws, the student moved back to the teacher's level (YOLO-seg teacher on log
-  10: Dice 0.804, i.e. IoU ~0.672; v3 uniform 0.668).
+- **More teacher-labelled logs alone made knots worse** (human share diluted from ~4.9% (v2) to
+  ~2.1% of draws). *Correction 2026-10-06:* an earlier version of this note said the student "moved
+  back to the teacher's level", converting the teacher's per-frame Dice 0.804 to IoU ~0.672. That
+  conversion is only valid for pooled Dice; the teacher's pooled knot IoU on log 10 is **0.745**,
+  well above every student (see "Student vs teacher" below). The dilution effect itself is
+  measured between our own runs and stands.
 - **Human-frame weighting recovers most of it and saturates at ~5x.** 10x is on par with 5x.
   Human labels are worth several times more than teacher labels; further gains need more
   distinct human-reviewed logs rather than heavier weighting of the one we have.
@@ -532,6 +535,26 @@ Paired vs v3 human 5x (pooled): warm restart knot +0.0021 [-0.0006, +0.0049], fg
   log 4 and log 10 by ~0.007, within noise) and the best pith of all knot-competitive models.
   Checkpoint: `ckpt/kwp_v3_784_last4_aug_humanw5_cont_bf16.*` (head, `.backbone.pth`,
   `.pith.pth`) on euler.
+
+### Student vs teacher on clean log 10 (2026-10-06)
+
+Measured by the Annotations agent from exported student probabilities (`scripts/export_knot_probs.py`,
+consistency check: student pooled IoU 0.675 at p>=0.5, native 778, vs 0.671 in our eval) and the
+teacher's masks, same 293 slices, pooled IoU (`logs/autoann_20261006/REPORT.local.md`):
+
+| model | pooled knot IoU | Dice / frame | straight-knot Dice |
+|---|---|---|---|
+| YOLO11n-seg teacher `yolo11n_seg_v5_val10` (conf >= 0.25) | **0.745** | 0.804 | 0.817 |
+| best DINOv3 student (p >= 0.5) | 0.676 | 0.737 | 0.751 |
+| mean of both (>= 0.5) | 0.741 | 0.776 | 0.780 |
+
+The 6M-parameter YOLO11n-seg beats our best student by ~0.07 IoU, and fusing them does not beat the
+teacher. Candidate causes: (a) resolution: the DINOv3 head decodes from a 49 x 49 token grid (16 px
+patches) without high-resolution skips, while thin knots are ~8 px wide; YOLO-seg masks come from a
+multi-scale FPN at native resolution; (b) distillation: the student learns mostly from the teacher's
+labels; (c) data, a confound: the teacher trained on ~900 human frames of logs 1, 2, 4, 08, the
+student on 317 human frames (logs 1 and 4 are its validation set), so the teacher had ~3x the human
+data.
 
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
