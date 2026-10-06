@@ -556,6 +556,21 @@ labels; (c) data, a confound: the teacher trained on ~900 human frames of logs 1
 student on 317 human frames (logs 1 and 4 are its validation set), so the teacher had ~3x the human
 data.
 
+Knot-width breakdown on log 10 (`fusion_log10.npz` teacher masks vs exported student probabilities):
+recall is equal (teacher 0.883, student 0.879) and equal per width bucket for knots > 10 px; the student
+misses more knots < 10 px (pixel recall 0.68-0.71 vs 0.76, only 7% of knot pixels) and is better on round
+knots. The gap is precision (0.745 vs 0.827): of the student's 70k false-positive pixels, 49k sit within
+5 px of a real knot (teacher: 29k), so the student's knots are too wide. Raising the student threshold
+only reaches 0.692 (tuned on log 10), so it is boundary localization, not calibration.
+
+**Data confound ruled out (2026-10-07)**: the same best recipe trained on the teacher's human split
+(human logs 1, 2, 4 and the 27 frames of 08 in training, 899 human frames; log 10 for validation and
+test; `train_kwp_v3_784_last4_aug_humanw5_ema_pithhm_teachersplit_bf16.yaml`) reaches test knot IoU
+0.672 on log 10, the same as with 317 human frames (0.671); pith 0.86 px, wood 0.974. Three times the
+human data does not close the gap, so it lies in the model (coarse 49 x 49 token decoder, recall-biased
+loss), not in the data. Next: YOLO11 s/m/n-seg at 800 px and a U-Net (ResNet-50, 800 px) on the same
+split.
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
