@@ -594,8 +594,12 @@ changes the teacher by +0.001).
   knot edges 43k vs 29k). At threshold 0.8 its recall equals the teacher's (0.883) at precision 0.818
   (IoU 0.738; threshold tuned on log 10, optimistic). The remaining gap is boundary width, likely from
   the recall-biased Tversky loss (beta 0.7).
-- **Pith** from the U-Net heatmap channel (0.41 px median, p90 0.80 px) is the best of all models,
-  better than the YOLO OBB detector (0.81 px).
+- **Pith** from the U-Net heatmap channel (0.41 px median, p90 0.80 px) is the best of all models.
+  Against human clicks on log 10 with the prediction rounded to a pixel: exact pixel 68%, <= 1 px 96%,
+  <= 2 px 99%, mean 0.38 px, versus the snapped YOLO OBB pith used for pre-annotation (61% / 96% / 99%,
+  mean 0.43 px). Snapping the U-Net output to the darkest pixel makes it slightly worse (62% exact).
+- Annotations agent's protocol (wood-clipped) gives the same U-Net knot IoU (0.720); mean fusion of
+  YOLO n@800 and U-Net probabilities: 0.758 (+0.008 over YOLO, within noise, threshold picked on log 10).
 
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
