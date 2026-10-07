@@ -601,6 +601,24 @@ changes the teacher by +0.001).
 - Annotations agent's protocol (wood-clipped) gives the same U-Net knot IoU (0.720); mean fusion of
   YOLO n@800 and U-Net probabilities: 0.758 (+0.008 over YOLO, within noise, threshold picked on log 10).
 
+### U-Net with a balanced loss closes the gap to YOLO (2026-10-07)
+
+Same U-Net (ResNet-50, 800 px, teacher split) with soft Dice (Tversky alpha = beta = 0.5) instead of
+the recall-biased 0.3/0.7 (`train_kwp_v3_unet_r50_800_humanw5_ema_teachersplit_dice.yaml`). Log 10,
+native 778, pooled over 293 slices:
+
+| model | knot IoU | precision | recall | FP px at knot edges | pith median | wood IoU |
+|---|---|---|---|---|---|---|
+| YOLO11n-seg @640 (teacher) | 0.746 | 0.828 | 0.883 | 29.2k | – | – |
+| YOLO11n-seg @800 | 0.750 | | | | – | – |
+| U-Net, Tversky 0.3/0.7 | 0.720 | 0.772 | 0.914 | 43.2k | 0.41 px | 0.983 |
+| **U-Net, soft Dice** | **0.744** | **0.834** | 0.874 | **28.8k** | 0.42 px | 0.985 |
+
+The recall-biased loss was most of the remaining gap: the knot edges are now as tight as YOLO's,
+thin-knot (< 10 px) pixel recall is slightly higher (0.777 vs 0.757), and the threshold barely matters
+(0.744-0.747 for p >= 0.5-0.7). The 0.006 to YOLO n@800 is within seed noise. One U-Net now matches the
+best knot model and gives the best pith and wood.
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
