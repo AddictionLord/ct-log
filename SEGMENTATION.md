@@ -571,6 +571,32 @@ human data does not close the gap, so it lies in the model (coarse 49 x 49 token
 loss), not in the data. Next: YOLO11 s/m/n-seg at 800 px and a U-Net (ResNet-50, 800 px) on the same
 split.
 
+### Single-model comparison on the teacher's split (2026-10-07)
+
+All trained on human logs 1, 2, 4, 08 (899 frames) + auto logs, best checkpoint selected on log 10,
+evaluated on log 10. Knot IoU pooled over the 293 annotated slices at native 778 (YOLO numbers: the
+Annotations agent's function, wood-clipped; U-Net/DINO: exported probabilities, unclipped; clipping
+changes the teacher by +0.001).
+
+| model | knot IoU (p >= 0.5 / conf 0.25) | precision | recall | pith median | wood IoU |
+|---|---|---|---|---|---|
+| YOLO11n-seg @640 (teacher) | 0.745 | 0.827 | 0.883 | (OBB detector: 0.81 px) | – |
+| YOLO11n-seg @800 | **0.750** | | | | – |
+| YOLO11s / m-seg @800 | 0.738 / 0.734 | | | | – |
+| DINOv3 ViT-L, last 4 blocks, 784 | 0.676 (training eval 0.672) | 0.745 | 0.879 | 0.86 px | 0.974 |
+| **U-Net ResNet-50, 800** | 0.720 (training eval 0.708) | 0.772 | **0.914** | **0.41 px** | **0.983** |
+
+- **Bigger YOLO does not help** (n > s > m at 899 frames): data-limited, not capacity-limited.
+- **U-Net vs DINOv3**: +0.044 knot IoU, half the pith error, higher wood IoU, at a fraction of the
+  compute. The full-resolution decoder fixes most of DINO's boundary problem.
+- **U-Net vs YOLO**: the U-Net finds more knots (recall 0.914 vs 0.883; thin knots < 10 px pixel
+  recall 0.81-0.84 vs 0.76; elongated 0.89 vs 0.84) but draws them wider (false-positive pixels at
+  knot edges 43k vs 29k). At threshold 0.8 its recall equals the teacher's (0.883) at precision 0.818
+  (IoU 0.738; threshold tuned on log 10, optimistic). The remaining gap is boundary width, likely from
+  the recall-biased Tversky loss (beta 0.7).
+- **Pith** from the U-Net heatmap channel (0.41 px median, p90 0.80 px) is the best of all models,
+  better than the YOLO OBB detector (0.81 px).
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
