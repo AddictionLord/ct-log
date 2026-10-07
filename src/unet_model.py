@@ -72,7 +72,8 @@ class UnetSegPith(nn.Module):
         with torch.autocast(device_type=images.device.type, dtype=torch.bfloat16, enabled=self.bf16):
             out = self.net(images)
         out = out.float()
-        self.pith_logits = out[:, self.num_classes] if self.pith else None
+        if not torch.compiler.is_exporting():
+            self.pith_logits = out[:, self.num_classes] if self.pith else None
         return out[:, : self.num_classes]
 
     def example_input(self, batch_size: int = 2) -> torch.Tensor:

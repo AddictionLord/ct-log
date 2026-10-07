@@ -32,6 +32,7 @@ STALL_SEC=${STALL_SEC:-2700}
 UNREACH_POLLS=${UNREACH_POLLS:-6}
 MAX_RECOVERIES=${MAX_RECOVERIES:-3}
 TRIAGE_MODEL=${TRIAGE_MODEL:-sonnet}
+IGNORE_MLFLOW=${IGNORE_MLFLOW:-}
 
 if [ -z "$JOB" ] || [ -z "$RUN_SCRIPT" ] || [ -z "$INFO" ]; then
     echo "usage: scripts/euler_watch.sh <job> <remote_run_script> <remote_train_info_yaml>"
@@ -143,7 +144,11 @@ while true; do
 
     [ "$(field "$s" done)" = "1" ] && [ "$(field "$s" exit)" != "none" ] && wake "FINISHED $s"
     [ "$(field "$s" exit)" != "none" ] && wake "FAILED job exited without completion marker: $s"
-    [ "$(field "$s" mlf)" -gt "$b_mlf" ] && wake "MLFLOW failure: $s"
+    if [ "$(field "$s" mlf)" -gt "$b_mlf" ]; then
+        [ -z "$IGNORE_MLFLOW" ] && wake "MLFLOW failure: $s"
+        note "MLflow failure ignored (IGNORE_MLFLOW set): $s"
+        b_mlf=$(field "$s" mlf)
+    fi
 
     if [ "$(field "$s" tb)" -gt "$b_tb" ]; then
         verdict=$(triage)
