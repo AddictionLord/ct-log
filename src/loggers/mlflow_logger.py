@@ -95,7 +95,9 @@ class MlflowLogger(ILogger):
 
         A CPU copy is exported, so the model loads on any machine via ``mlflow.pytorch.load_model``
         and moves with ``.to(device)``. The batch dimension of the signature is dynamic; all other
-        dimensions are fixed to the example's shape. Training checkpoints stay local.
+        dimensions are fixed to the example's shape. Training checkpoints stay local. After a
+        successful upload, the run's earlier logged models are deleted: uploads happen only on a
+        new best, so the run keeps exactly one model, its best so far.
 
         The example is passed as a tensor, not an array: MLflow then only uses it to trace the
         graph and does not store it as input_example.json / serving_input_example.json, which
@@ -122,7 +124,7 @@ class MlflowLogger(ILogger):
                     [self._mlflow.types.TensorSpec(np.dtype(np.float32), (-1, *example.shape[1:]))]
                 )
             )
-            self._mlflow.pytorch.log_model(
+            model_info = self._mlflow.pytorch.log_model(
                 _cpu_copy(model),
                 name=name,
                 serialization_format="pt2",
@@ -132,6 +134,24 @@ class MlflowLogger(ILogger):
             )
         except Exception as error:  # noqa: BLE001
             print("MLflow model logging skipped for %s (%s: %s)" % (name, type(error).__name__, error))
+            return
+        self._delete_older_models(model_info.model_id)
+
+    def _delete_older_models(self, keep_model_id: str) -> None:
+        run = self._mlflow.active_run()
+        try:
+            models = self._mlflow.search_logged_models(
+                experiment_ids=[run.info.experiment_id],
+                filter_string="source_run_id = '%s'" % run.info.run_id,
+                output_format="list",
+            )
+            client = self._mlflow.MlflowClient()
+            for logged in models:
+                if logged.model_id != keep_model_id:
+                    client.delete_logged_model(logged.model_id)
+                    print("MLflow deleted superseded model %s (%s)" % (logged.name, logged.model_id))
+        except Exception as error:  # noqa: BLE001
+            print("MLflow cleanup of superseded models failed (%s: %s)" % (type(error).__name__, error))
 
     def log_image(self, image: np.ndarray, key: str, step: int) -> None:
         """Log an image as the plain PNG artifact <key>/step_<NNNN>.png.

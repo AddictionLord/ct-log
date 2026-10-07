@@ -636,6 +636,26 @@ The U-Net beats DINOv3 on every log by ~4x the seed noise, with ~40% lower pith 
 IoU (0.983). This run still uses the recall-biased loss; the soft-Dice version is first in the sweep
 queue (`scripts/queue_runner.sh`, `queue/queue.txt` on euler).
 
+### Soft Dice and 5-slice input on the original split (2026-10-07)
+
+Queue runs 1 and 2 (`train_kwp_v3_unet_r50_w1_dice.yaml`, `..._w2_dice.yaml`): U-Net ResNet-50 @800, soft
+Dice, original split, 12 epochs. Paired per-log block bootstrap (blocks of 20 slices, 2000 resamples),
+differences against the Tversky U-Net (`logs/eval_per_log/eval_dice_w1w2_20261007.json` on euler):
+
+| model | knot IoU pooled 1/4/10 | diff vs Tversky | log 10 | pith median (pooled) |
+|---|---|---|---|---|
+| U-Net Tversky 0.3/0.7, 3 slices | 0.722 | – | 0.709 | 0.45 px |
+| **U-Net soft Dice, 3 slices** | **0.739** | **+0.018 [+0.013, +0.023]** | **0.735** | 0.56 px |
+| U-Net soft Dice, 5 slices | 0.721 | -0.001 [-0.006, +0.004] | 0.716 | 0.49 px |
+| DINOv3 best | 0.683 | -0.038 [-0.046, -0.031] | 0.671 | 0.78 px |
+
+- Soft Dice gains on every log (+0.017 on 4, +0.026 on 10), as on the teacher split. U-Net Dice vs DINOv3:
+  +0.056 pooled.
+- Five slices lose about 0.018 against three slices (same recipe, single seed each). That is twice the
+  seed noise, and it is consistent with the DINOv3 2.5D null: wider axial context does not help here.
+- Pith got worse with Dice on this split (0.56 vs 0.45 px median); on the teacher split it did not
+  (0.42 px). Unresolved; check against the seed-2 run.
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
