@@ -252,6 +252,9 @@ def build_kwp_model(config: Any) -> Tuple[nn.Module, nn.Module, Optional[nn.Modu
         ValueError: For an unknown model type.
     """
     if config.model_type == "dinov3":
+        if config.window > 1:
+            msg = f"DINOv3 takes 3 input channels; window must be 0 or 1, got {config.window}"
+            raise ValueError(msg)
         backbone, seg_head = create_dinov3_segmentor(
             backbone_weights=config.backbone_weights,
             num_classes=config.num_classes,
@@ -270,6 +273,7 @@ def build_kwp_model(config: Any) -> Tuple[nn.Module, nn.Module, Optional[nn.Modu
             pith=config.pith_regression,
             input_size=config.resolution[0],
             bf16=config.backbone_bf16,
+            in_channels=3 if config.window <= 1 else 2 * config.window + 1,
         )
         pith_head = CachedPithHead(seg_head) if config.pith_regression else None
         return ImageBackbone(), seg_head, pith_head

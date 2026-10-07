@@ -9,7 +9,7 @@ import numpy as np
 from scripts.export_knot_probs import load_stack
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.segmentation_head import build_kwp_model
-from src.train_kwp import extract_features, make_transform
+from src.train_kwp import extract_features, input_channels, make_transform
 import torch
 import torch.nn.functional as F
 
@@ -41,7 +41,7 @@ def main() -> None:
     if state.get("pith_head"):
         pith_head.load_state_dict(state["pith_head"])
     backbone, seg_head, pith_head = backbone.to(device).eval(), seg_head.to(device).eval(), pith_head.to(device).eval()
-    transform = make_transform()
+    transform = make_transform(input_channels(config.window))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     counts: Dict[str, int] = {}
@@ -60,7 +60,7 @@ def main() -> None:
         "checkpoint_sha256": sha256(args.best_copy),
         "epoch": args.epoch,
         "weights": "EMA weights (best copy saved while EMA weights were swapped in)",
-        "input_stack": f"[z-1, z, z+1] slices from <log>/img sorted by page index, clamped at the ends (window={config.window})",
+        "input_stack": f"[z-{config.window} .. z+{config.window}] slices from <log>/img sorted by page index, clamped at the ends",
         "resize": f"native {NATIVE}x{NATIVE} -> {config.resolution[0]}x{config.resolution[1]} bilinear, ImageNet normalisation",
         "prediction": "soft-argmax of the pith heatmap channel, normalized (x, y) in [0, 1] with pixel centres at (i + 0.5) / W",
         "rounding": f"x_px = rint(x * {NATIVE}), y_px = rint(y * {NATIVE}), clipped to [0, {NATIVE - 1}]; integer pixel index "

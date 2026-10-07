@@ -48,12 +48,35 @@ def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int
     return torch.cat(layers, dim=-1).float()
 
 
-def make_transform() -> torchvision.transforms.Normalize:
-    """Build the ImageNet normalization applied to stacked slices."""
+def make_transform(num_channels: int = 3) -> torchvision.transforms.Normalize:
+    """Build the ImageNet normalization applied to stacked slices.
+
+    For more than three channels the ImageNet statistics are cycled (channel i uses RGB channel
+    i % 3), matching how segmentation_models_pytorch adapts the first pretrained convolution.
+
+    Args:
+        num_channels: Number of stacked input channels.
+
+    Returns:
+        torchvision.transforms.Normalize: per-channel normalization.
+    """
+    mean, std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
     return torchvision.transforms.Normalize(
-        mean=(0.485, 0.456, 0.406),
-        std=(0.229, 0.224, 0.225),
+        mean=[mean[i % 3] for i in range(num_channels)],
+        std=[std[i % 3] for i in range(num_channels)],
     )
+
+
+def input_channels(window: int) -> int:
+    """Number of stacked input channels for a slice window (window 0 replicates the centre 3x).
+
+    Args:
+        window: Neighbor slices on each side.
+
+    Returns:
+        int: 3 for window 0 or 1, else 2 * window + 1.
+    """
+    return 3 if window <= 1 else 2 * window + 1
 
 
 def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.DataLoader]:
@@ -456,7 +479,7 @@ def main() -> None:
     backbone_ckpt_path = config.checkpoint_path.with_suffix(".backbone.pth")
     pith_ckpt_path = config.checkpoint_path.with_suffix(".pith.pth")
 
-    transform = make_transform()
+    transform = make_transform(input_channels(config.window))
     class_weights = build_class_weights(config, device)
     if class_weights is not None:
         print(f"Class weights ({config.class_weighting}): {class_weights.tolist()}")

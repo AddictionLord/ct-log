@@ -8,7 +8,7 @@ from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.dataset.kwp_mask import KwpMaskBuilder
 from src.segmentation_head import build_kwp_model
-from src.train_kwp import extract_features, make_transform, pith_pixel_errors
+from src.train_kwp import extract_features, input_channels, make_transform, pith_pixel_errors
 import torch
 
 FG_CLASSES = ("wood", "knot")
@@ -70,7 +70,7 @@ def evaluate_model(
     else:
         pith_head = None
     backbone, seg_head = backbone.to(device).eval(), seg_head.to(device).eval()
-    transform = make_transform()
+    transform = make_transform(input_channels(config.window))
 
     results: Dict[str, Dict[str, np.ndarray]] = {}
     for log in logs:

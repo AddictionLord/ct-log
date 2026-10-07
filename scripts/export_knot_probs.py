@@ -8,7 +8,7 @@ from PIL import Image
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.kwp_mask import KwpMaskBuilder
 from src.segmentation_head import build_kwp_model
-from src.train_kwp import extract_features, make_transform
+from src.train_kwp import extract_features, input_channels, make_transform
 import torch
 import torch.nn.functional as F
 
@@ -32,7 +32,7 @@ def main() -> None:
     if state.get("backbone") is not None:
         backbone.load_state_dict(state["backbone"], strict=False)
     backbone, seg_head = backbone.to(device).eval(), seg_head.to(device).eval()
-    transform = make_transform()
+    transform = make_transform(input_channels(config.window))
     knot_id = KwpMaskBuilder.class_names().index("knot")
 
     pages = sorted(
@@ -61,7 +61,7 @@ def load_stack(paths: List[Path], position: int, window: int) -> torch.Tensor:
     if window == 0:
         neighbors = [position, position, position]
     else:
-        neighbors = [max(position - 1, 0), position, min(position + 1, len(paths) - 1)]
+        neighbors = [min(max(position + offset, 0), len(paths) - 1) for offset in range(-window, window + 1)]
     slices = [np.asarray(Image.open(paths[index]).convert("L"), dtype=np.float32) / 255.0 for index in neighbors]
     return torch.from_numpy(np.stack(slices))
 

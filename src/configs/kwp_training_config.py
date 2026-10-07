@@ -20,7 +20,7 @@ class KwpTrainingConfig(BaseModel):
 
     train_logs: List[str]
     val_logs: List[str]
-    window: int = Field(1, ge=0, le=1)
+    window: int = Field(1, ge=0, le=3)
     n_layers: int = Field(1, ge=1, le=4)
     pith_radius: int = 3
     batch_size: int = Field(2, gt=0)
