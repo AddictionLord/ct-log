@@ -619,6 +619,23 @@ thin-knot (< 10 px) pixel recall is slightly higher (0.777 vs 0.757), and the th
 (0.744-0.747 for p >= 0.5-0.7). The 0.006 to YOLO n@800 is within seed noise. One U-Net now matches the
 best knot model and gives the best pith and wood.
 
+### U-Net vs DINOv3 on the original split (2026-10-07)
+
+U-Net ResNet-50 @800 trained on the original DINOv3 split (train = v3 auto logs + human 2 + 08, val =
+human 1 + 4, test = human 10; Tversky 0.3/0.7, `train_kwp_v3_unet_r50_800_humanw5_ema.yaml`), paired
+block bootstrap against the best DINOv3 model (same split, same data):
+
+| log | DINOv3 best knot | U-Net knot | diff [95% CI] | pith DINOv3 / U-Net |
+|---|---|---|---|---|
+| 1 | 0.685 | 0.722 | +0.037 [+0.027, +0.047] | 0.78 / 0.47 px |
+| 4 | 0.690 | 0.731 | +0.041 [+0.031, +0.054] | 0.68 / 0.46 px |
+| 10 (test) | 0.671 | 0.709 | +0.038 [+0.020, +0.057] | 0.85 / 0.43 px |
+| pooled | 0.683 | **0.722** | **+0.038 [+0.031, +0.046]** | 0.78 / **0.45** px |
+
+The U-Net beats DINOv3 on every log by ~4x the seed noise, with ~40% lower pith error and higher wood
+IoU (0.983). This run still uses the recall-biased loss; the soft-Dice version is first in the sweep
+queue (`scripts/queue_runner.sh`, `queue/queue.txt` on euler).
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
