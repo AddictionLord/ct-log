@@ -1,4 +1,4 @@
-# Queued 2026-10-07 (unet_mitb2_w1_dice). Encoder: MiT-B2 (SegFormer transformer encoder).
+# Queued 2026-10-07 (unet_mitb2_w1_dice). Encoder: MiT-B2 (SegFormer transformer encoder). Batch 4: batch 6 ran out of memory on the 16 GB GPU.
 # Common recipe: kwp-ds-v3, 800 px, soft Dice (Tversky 0.5/0.5), no class weights, focal gamma 2, human 5x
 # (pith loss decoupled), EMA 0.9995, augmentation, bf16, 12 epochs, batch 6, pith as a heatmap channel.
 # original split: train = auto logs + human 2 + 08; val = human 1, 4; test = human 10. MLflow experiment: ct-log-kwp-v1.
@@ -91,7 +91,7 @@ test_logs:
 train_probe_logs:
   - /home/jovyan/work/ctlog-eval/data/kwp_ds_v3/2
 
-batch_size: 6
+batch_size: 4
 num_workers: 6
 
 distribution_loss_weight: 0.4

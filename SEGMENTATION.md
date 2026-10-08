@@ -656,6 +656,43 @@ differences against the Tversky U-Net (`logs/eval_per_log/eval_dice_w1w2_2026100
 - Pith got worse with Dice on this split (0.56 vs 0.45 px median); on the teacher split it did not
   (0.42 px). Unresolved; check against the seed-2 run.
 
+### U-Net soft Dice vs YOLO: second run (2026-10-07)
+
+Independent rerun of the teacher-split soft-Dice U-Net (`train_kwp_v3_unet_r50_w1_dice_s2.yaml`, same
+recipe, unseeded), log 10, native 778, p >= 0.5, pooled over 293 slices (`exports/unet_dice_s2_probs_log10`):
+
+| model | knot IoU | precision | recall |
+|---|---|---|---|
+| YOLO11n-seg @640 (teacher) | 0.746 | 0.828 | 0.883 |
+| YOLO11n-seg @800 (Annotations agent's function) | 0.750 | | |
+| U-Net Dice, run 1 | 0.744 | 0.834 | 0.874 |
+| U-Net Dice, run 2 | 0.746 | 0.839 | 0.871 |
+| mean of runs 1 + 2 (probability average) | 0.750 | 0.845 | 0.869 |
+
+The two runs differ by 0.002, so the U-Net result is stable: parity with the teacher, 0.004-0.006 below
+YOLO n@800, which is within the noise of a single test log. A two-model average reaches 0.750 at twice the
+inference cost.
+
+### Encoder sweep and 7-slice input, original split (2026-10-08)
+
+Soft-Dice U-Net @800, original split, same recipe; only the encoder (or window) changes. Paired per-log
+block bootstrap against U-Net ResNet-50 (`logs/eval_per_log/eval_sweep1_20261008.json` on euler):
+
+| encoder | knot IoU pooled 1/4/10 | diff vs ResNet-50 | log 10 | pith median (pooled) |
+|---|---|---|---|---|
+| ResNet-50, 3 slices | 0.739 | – | 0.735 | 0.56 px |
+| ConvNeXt-T | 0.734 | -0.005 [-0.010, -0.000] | 0.737 | 0.46 px |
+| ConvNeXt-S | 0.744 | +0.004 [-0.000, +0.009] | 0.737 | 0.47 px |
+| EfficientNetV2-S | 0.737 | -0.002 [-0.008, +0.004] | 0.738 | 0.45 px |
+| ResNet-50, 7 slices | 0.714 | -0.026 [-0.032, -0.020] | 0.708 | 0.53 px |
+
+- All encoders land within +-0.005 of ResNet-50, inside seed noise (0.009). Capacity is not what limits
+  knot IoU; the student converges to its pseudo-labels.
+- The modern encoders give better pith (0.45-0.47 vs 0.56 px median).
+- More slices hurt monotonically: 3 -> 5 -> 7 slices = 0.739 -> 0.721 -> 0.714.
+- MiT-B2 ran out of memory at batch 6 (requeued at batch 4); DeepLabV3+ failed on a batch of 1 in the
+  ASPP pooling BatchNorm (train loader now uses `drop_last`; requeued).
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:

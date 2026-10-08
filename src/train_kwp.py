@@ -15,13 +15,13 @@ from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
 from src.segmentation_head import build_kwp_model
-from src.utils.ema import WeightEma
 from src.utils.checkpoints import save_best_copy
 from src.utils.class_balance import (
     capped_inverse_frequency_weights,
     effective_number_weights,
     inverse_frequency_weights,
 )
+from src.utils.ema import WeightEma
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
 from src.utils.prediction_panels import render_panel
@@ -111,6 +111,7 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             shuffle=sampler is None,
             sampler=sampler,
             num_workers=config.num_workers,
+            drop_last=True,
         ),
         "val": torch.utils.data.DataLoader(
             val_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
