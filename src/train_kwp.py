@@ -25,7 +25,7 @@ from src.utils.ema import WeightEma
 from src.utils.metrics import MetricsTracker
 from src.utils.per_class_iou import PerClassIoU
 from src.utils.prediction_panels import render_panel
-from src.utils.provenance import git_provenance
+from src.utils.provenance import git_provenance, provenance_tags
 from src.utils.train_info import TrainInfo
 
 NATIVE_SLICE_SIZE = 778
@@ -458,6 +458,7 @@ def main() -> None:
     logger.start()
     run_params = config.model_dump(mode="json") | git_provenance()
     logger.log_params(run_params)
+    logger.log_tags(provenance_tags(config))
     logger.log_dict(run_params, "config.yaml")
 
     model, seg_head, pith_head = build_kwp_model(config)

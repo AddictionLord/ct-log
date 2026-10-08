@@ -30,6 +30,13 @@ class ILogger(ABC):
             params: Dictionary of parameters to log.
         """
 
+    def log_tags(self, tags: Dict[str, str]) -> None:
+        """Attach searchable tags to the run; loggers without tags ignore them.
+
+        Args:
+            tags: Tag name to value.
+        """
+
     @abstractmethod
     def log_model(
         self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None

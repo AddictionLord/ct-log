@@ -88,6 +88,19 @@ class MlflowLogger(ILogger):
         except Exception as error:  # noqa: BLE001
             print("MLflow param logging failed (%s: %s)" % (type(error).__name__, error))
 
+    def log_tags(self, tags: Dict[str, str]) -> None:
+        """Set run tags (data provenance etc.), shown as filterable columns in the UI.
+
+        Args:
+            tags: Tag name to value.
+        """
+        if not self._enabled:
+            return
+        try:
+            self._mlflow.set_tags(tags)
+        except Exception as error:  # noqa: BLE001
+            print("MLflow tag logging failed (%s: %s)" % (type(error).__name__, error))
+
     def log_model(
         self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None
     ) -> None:

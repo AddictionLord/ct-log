@@ -41,6 +41,15 @@ class CombinedLogger(ILogger):
         for logger in self.loggers:
             logger.log_params(params)
 
+    def log_tags(self, tags: Dict[str, str]) -> None:
+        """Log tags to all loggers.
+
+        Args:
+            tags: Tag name to value.
+        """
+        for logger in self.loggers:
+            logger.log_tags(tags)
+
     def log_model(
         self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None
     ) -> None:
