@@ -754,6 +754,30 @@ the two v4 models at the fixed threshold 0.5 (no tuning on log 10) gives 0.763 (
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
+### U-Net vs YOLO on the original split, native metric (2026-10-08)
+
+YOLO11n-seg @800 trained on the original split by the Annotations session (`yolo11n_seg_origsplit_800`:
+human frames of logs 2 + 08 only, 317 frames, no auto data; best epoch selected on 1+4), scored with its
+official function (native 778, conf >= 0.25 and peel wood). U-Nets: soft Dice, original split (auto v3
+logs + human 2, 08 at 5x), exported at native 778, p >= 0.5, not wood-clipped. Paired block bootstrap
+(20 slices, 2000 resamples) on the same GT; YOLO's numbers reproduce the official ones exactly
+(`eval_native_vs_yolo.py` on euler):
+
+| model | log 1 | log 4 | log 10 | pooled | diff vs YOLO, pooled |
+|---|---|---|---|---|---|
+| YOLO11n-seg, 317 human frames | 0.738 | 0.750 | 0.735 | 0.741 | – |
+| U-Net ResNet-50 | 0.748 | 0.768 | 0.749 | 0.755 | +0.013 [+0.007, +0.020] |
+| **U-Net ConvNeXt-S** | **0.758** | **0.769** | **0.752** | **0.760** | **+0.019 [+0.011, +0.026]** |
+| U-Net EfficientNetV2-S | 0.740 | 0.763 | 0.749 | 0.749 | +0.008 [-0.001, +0.016] |
+
+- On the same human split, the U-Nets beat YOLO by 0.008-0.019 pooled; on clean log 10 by 0.012-0.017
+  (CIs touch zero per single log).
+- Not an architecture comparison: the U-Nets also train on ~15k auto frames whose labels came from a YOLO
+  that saw human 1 and 4 (mild leak into 1/4; log 10 clean). The YOLO trained on the U-Net's exact data
+  (`yolo11n_seg_origsplit_auto_800`) separates architecture from data.
+- YOLO human-only on log 10: 0.735 with 317 frames vs 0.750 with 899 frames (+0.015 from 3x human data).
+- The training-loop metric (800 grid, argmax) understates native IoU by ~0.010-0.016 on these models.
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
