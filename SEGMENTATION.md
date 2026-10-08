@@ -744,7 +744,13 @@ over 293 slices (`exports/v4_effv2s_probs_log10`):
 | **U-Net EffV2-S** | **kwp-ds-v4** | **0.754** | **0.858** | 0.861 |
 
 +0.009 over the mean of the two v3 runs and +0.004 over YOLO n@800, single run on a single test log
-(noise ~0.009-0.018), so suggestive, not established. The encoder changed too, but encoders were within
+(noise ~0.009-0.018), so suggestive, not established.
+
+Second v4 run, ConvNeXt-S (`train_kwp_v4_unet_convnext_small_w1_dice_ts.yaml`): knot IoU 0.752 (precision
+0.846, recall 0.872). Both v4 runs (0.754, 0.752; mean 0.753) sit above both v3 runs (0.744, 0.746; mean
+0.745): +0.008 from the better pseudo-labels, reproduced across two encoders. The probability average of
+the two v4 models at the fixed threshold 0.5 (no tuning on log 10) gives 0.763 (precision 0.865, recall
+0.866), +0.013 over YOLO n@800. The encoder changed too, but encoders were within
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
