@@ -3,6 +3,43 @@
 Status of the DINOv3-based defect segmentation pipeline and the planned
 direction. Living document.
 
+## MLflow run tags: legend (2026-10-08)
+
+Every run on DagsHub (`https://dagshub.com/AddictionLord/ct-log.mlflow`) carries seven provenance tags.
+Runs from 2026-10-08 on set them at start (`src/utils/provenance.py`); older runs were tagged
+retroactively from their logged `config.yaml`. Filter or add them as columns in the run table.
+
+| tag | values | meaning |
+|---|---|---|
+| `dataset` | `kwp-ds-v1` … `kwp-ds-v4` | dataset version; defined in `ann_pipeline/DATASET_VERSIONS.md` |
+| `auto_labels` | see below | what generated the labels on the auto (non-human) logs |
+| `split` | `teacher`, `original`, `original-notest`, `other` | which human logs are held out (below) |
+| `train_human_logs` | `2,08(27fr)` or `1,2,4,08(27fr)` | human-labelled logs in training; 08 has only 27 human frames, the rest of 08 is auto |
+| `val_logs`, `test_logs` | e.g. `1,4` / `10` | held-out human logs |
+| `n_train_logs` | e.g. `51`, `53` | logs in training, human + auto |
+
+`auto_labels` values:
+- `v1: propagation pipeline (OBB + MedSAM2, post-filtered)`: kwp-ds-v1, misses most thin knots.
+- `YOLO11n-seg@640 knots + OBB pith (generators trained on human 1,2,4,08)`: kwp-ds-v2 and v3
+  (`yolo11n_seg_v5_val10`, pith from the 2-class OBB).
+- `YOLO11n-seg@800 knots + U-Net pith (generators trained on human 1,2,4,08)`: kwp-ds-v4
+  (`yolo11n_seg_v5_val10_800`, pith `unet_pith_v1`).
+- `unknown`: probe and connection-test runs without a config, not trainings.
+
+`split` values:
+- `original`: train = auto logs + human 2, 08; val = human 1, 4; test = human 10 (MLflow
+  `ct-log-kwp-v1`). Three test logs, tighter CI. Caveat: since kwp-ds-v2 the auto labels come from
+  generators that saw logs 1 and 4, a mild indirect leak shared by every run on this split, so
+  rankings are fair but absolute 1/4 numbers are slightly flattering.
+- `teacher`: train = auto logs + human 1, 2, 4, 08; val = test = human 10. Same human split as the
+  YOLO generators, so the only split comparable with YOLO's numbers; log 10 is fully clean. New runs
+  go to `ct-log-kwp-teachersplit`; three older ones are in `ct-log-kwp-v1`.
+
+All U-Net and DINOv3 runs train on auto logs plus human frames (human frames weighted 5x from the
+kwp-ds-v3 runs on). Only the YOLO models (outside MLflow, see `ann_pipeline/DETECTOR_PROVENANCE.md`)
+train on human frames alone. The v1-era tag `08(27fr)` is approximate: v1 had 15-27 human frames of
+08 and 34 of log 2.
+
 ## Current pipeline (baseline)
 
 - **Entry point**: `src/train_dino.py` (the real one). `src/train.py` is a
@@ -692,6 +729,24 @@ block bootstrap against U-Net ResNet-50 (`logs/eval_per_log/eval_sweep1_20261008
 - More slices hurt monotonically: 3 -> 5 -> 7 slices = 0.739 -> 0.721 -> 0.714.
 - MiT-B2 ran out of memory at batch 6 (requeued at batch 4); DeepLabV3+ failed on a batch of 1 in the
   ASPP pooling BatchNorm (train loader now uses `drop_last`; requeued).
+
+### kwp-ds-v4 labels: first U-Net above YOLO on log 10 (2026-10-08)
+
+EfficientNetV2-S soft-Dice U-Net trained on kwp-ds-v4 (auto logs relabelled by YOLO n@800 knots + U-Net
+pith), teacher split (`train_kwp_v4_unet_effv2s_w1_dice_ts.yaml`). Log 10, native 778, p >= 0.5, pooled
+over 293 slices (`exports/v4_effv2s_probs_log10`):
+
+| model | auto labels | knot IoU | precision | recall |
+|---|---|---|---|---|
+| YOLO11n-seg @640 (teacher) | – | 0.746 | 0.828 | 0.883 |
+| YOLO11n-seg @800 | – | 0.750 | | |
+| U-Net R50, runs 1 / 2 | kwp-ds-v3 | 0.744 / 0.746 | 0.834 / 0.839 | 0.874 / 0.871 |
+| **U-Net EffV2-S** | **kwp-ds-v4** | **0.754** | **0.858** | 0.861 |
+
++0.009 over the mean of the two v3 runs and +0.004 over YOLO n@800, single run on a single test log
+(noise ~0.009-0.018), so suggestive, not established. The encoder changed too, but encoders were within
++-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
+tighter masks. Pith median 0.43 px (training metric).
 
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
