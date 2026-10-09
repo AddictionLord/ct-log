@@ -754,7 +754,20 @@ Second v4 run, ConvNeXt-S (`train_kwp_v4_unet_convnext_small_w1_dice_ts.yaml`): 
 0.846, recall 0.872). Both v4 runs (0.754, 0.752; mean 0.753) sit above both v3 runs (0.744, 0.746; mean
 0.745): +0.008 from the better pseudo-labels, reproduced across two encoders. The probability average of
 the two v4 models at the fixed threshold 0.5 (no tuning on log 10) gives 0.763 (precision 0.865, recall
-0.866), +0.013 over YOLO n@800. The encoder changed too, but encoders were within
+0.866), +0.013 over YOLO n@800.
+
+Third v4 run (2026-10-09, `train_kwp_v4_unet_convnext_small_w1_dice_ts_s2.yaml`, independent rerun of
+ConvNeXt-S): 0.754 (precision 0.840, recall 0.880). Log 10, native, p >= 0.5:
+
+| models | auto labels | single runs | probability average |
+|---|---|---|---|
+| U-Net R50 x2 | v3 | 0.744, 0.746 | 0.750 |
+| U-Net EffV2-S, ConvNeXt-S x2 | v4 | 0.754, 0.752, 0.754 | 0.762-0.764 (any 2 or all 3) |
+| YOLO11n-seg @800 | – | 0.750 | – |
+
+The v4 gain is reproducible: three v4 runs (0.752-0.754, spread 0.002) all above both v3 runs (+0.008).
+Averaging two models adds ~+0.009 on either label set, so the v4 pair (0.762-0.763) is +0.012 over the v3
+pair and +0.012-0.013 over YOLO n@800. Three models add only +0.001 over two. The encoder changed too, but encoders were within
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
