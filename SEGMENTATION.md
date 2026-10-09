@@ -727,6 +727,10 @@ block bootstrap against U-Net ResNet-50 (`logs/eval_per_log/eval_sweep1_20261008
   knot IoU; the student converges to its pseudo-labels.
 - The modern encoders give better pith (0.45-0.47 vs 0.56 px median).
 - More slices hurt monotonically: 3 -> 5 -> 7 slices = 0.739 -> 0.721 -> 0.714.
+- Rest of the sweep (2026-10-09, `eval_sweep2_20261009.json`), pooled vs ResNet-50: RegNetY-3.2GF 0.737
+  (-0.003 [-0.007, +0.002]), ConvNeXt-V2-T 0.740 (+0.001 [-0.004, +0.006]), MiT-B2 (batch 4) 0.735
+  (-0.005 [-0.009, -0.001]), DeepLabV3+ R50 0.735 (-0.004 [-0.009, +0.001]). Nothing beats ConvNeXt-S
+  (0.744); the decoder (U-Net vs DeepLabV3+) does not matter either. Pith 0.46-0.50 px for all non-R50.
 - MiT-B2 ran out of memory at batch 6 (requeued at batch 4); DeepLabV3+ failed on a batch of 1 in the
   ASPP pooling BatchNorm (train loader now uses `drop_last`; requeued).
 
