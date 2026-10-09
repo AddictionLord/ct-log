@@ -34,6 +34,7 @@ import torch
 from tqdm import tqdm
 from ultralytics import YOLO
 
+from ann_pipeline.pith.detectors import snap_to_darkest
 from ann_pipeline.wood.detectors import threshold_largest_cc
 
 HUMAN_TAG = "bumaska"
@@ -146,7 +147,7 @@ def _largest_cc(mask: np.ndarray) -> np.ndarray:
     return (labelled == largest).astype(np.uint8)
 
 
-def _yolo_pith(model: YOLO, img_rgb: np.ndarray, conf: float) -> Optional[Tuple[float, float]]:
+def _yolo_pith(model: YOLO, img_rgb: np.ndarray, conf: float, snap_window: int = 5) -> Optional[Tuple[float, float]]:
     res = model.predict(img_rgb, conf=conf, verbose=False)[0]
     if res.boxes is None or len(res.boxes) == 0:
         return None
@@ -158,7 +159,11 @@ def _yolo_pith(model: YOLO, img_rgb: np.ndarray, conf: float) -> Optional[Tuple[
         return None
     best = pith_idx[np.argmax(confs[pith_idx])]
     b = xyxy[best]
-    return float((b[0] + b[2]) / 2.0), float((b[1] + b[3]) / 2.0)
+    x, y = float((b[0] + b[2]) / 2.0), float((b[1] + b[3]) / 2.0)
+    if snap_window <= 0:
+        return x, y
+    sx, sy = snap_to_darkest(img_rgb[..., :3].mean(axis=-1), x, y, window=snap_window)
+    return float(sx), float(sy)
 
 
 def build_auto_annotation(

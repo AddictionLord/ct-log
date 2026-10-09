@@ -230,3 +230,69 @@ data reduced overfitting.
   composition — so the gain is not attributable to any single change.
 - The labels still carry the ~10 px thin-knot floor (see Filter ablation), so
   knot at 0.390 is measured against training data missing 97% of thin knots.
+
+## Knot segmentation default: `yolo11n_seg_v5_val10_800` (2026-10-07)
+
+Default knot model for auto annotation (`build_kwp_dataset.py` defaults: weights below, `imgsz=800`,
+conf 0.25). It replaces `yolo11n_seg_v5_val10` (640 px).
+
+- Weights: `ann_pipeline/out/knot_runs/yolo11n_seg_v5_val10_800/weights/best.pt`, sha256
+  `47e00848de5d60f0c9a082f61b4273d93675dc9fd75a7feb42efa9345a25bcb6`. Trained on euler
+  (`~/work/ctlog-eval/yolo/runs/yolo11n-seg_v5_val10_800`, ultralytics 8.4.51).
+- Data: identical to `yolo11n_seg_v5_val10`. Train on human logs 1 (291 frames), 2 (290),
+  4 (291) and 08 (27); val on log 10 (293). The dataset dir is `ann_pipeline/out/knot_yolo_seg_v5_val10`.
+- Hyperparameters: same as the 640 run (200 ep, patience 50, batch 8, seed 0, degrees 180, flips,
+  mosaic 0.5, mask_ratio 4), except `imgsz=800`. It stopped early at epoch 184; best epoch 134.
+
+Size and resolution sweep, same data. Pooled knot IoU on log 10, wood-clipped, conf 0.25, native
+resolution (`logs/autoann_20261006/yolo_sizes_log10.txt`):
+
+| model | imgsz | pooled IoU | dice/frame | component recall | val mask mAP50-95 |
+|---|---|---|---|---|---|
+| yolo11n-seg | 640 | 0.745 | 0.804 | 0.908 | 0.461 |
+| **yolo11n-seg** | **800** | **0.750** | **0.818** | **0.934** | **0.515** |
+| yolo11s-seg | 800 | 0.738 | 0.792 | 0.890 | 0.498 |
+| yolo11m-seg | 800 | 0.734 | 0.794 | 0.908 | 0.498 |
+
+Caveats:
+- Bigger models do not help with 899 training frames; the bottleneck is data, not capacity.
+- `best.pt` was selected on log 10 for all runs, so the absolute numbers are slightly optimistic.
+- Logs 1 and 4 are in training: they are not clean for any model that uses this generator's labels.
+- For comparison, the DINOv3 student scores 0.672 on log 10 even when trained on the same human split.
+  That gap is boundary localisation from its coarse decoder.
+
+### Cross-architecture comparison on log 10 (2026-10-07)
+
+All models were trained on the same human split (1/2/4/08 plus auto logs for the segmentation models)
+and scored through one function: `logs/autoann_20261006/postproc_eval.py`. Knot IoU is pixel-wise,
+pooled over the 293 annotated slices, native 778, wood-clipped. YOLO instance masks are unioned
+into a semantic mask, so the numbers are directly comparable; YOLO's mask mAP is not. All
+checkpoints were selected on log 10.
+
+| model | knot IoU | dice/frame | straight dice | pith exact / <=1 px | pith mean |
+|---|---|---|---|---|---|
+| YOLO11n-seg 800 (knots) + 2-class OBB with 5x5 snap (pith) | **0.750** | 0.818 | 0.836 | 61 % / 96 % | 0.43 px |
+| U-Net ResNet-50 800 (smp), p >= 0.5 | 0.720 | 0.778 | 0.822 | **68 % / 96 %** | **0.38 px** |
+| DINOv3 784, last 4 blocks, p >= 0.5 | 0.677 | 0.740 | 0.762 | 24 % / 69 % (61 % / 96 % with snap) | 1.00 px |
+
+Pith numbers for the U-Net and DINOv3 come from the segmentation session.
+
+### Original split, same data: YOLO vs U-Net (2026-10-09)
+
+Split: train on log 2 plus 08 (human), plus the kwp-ds-v3 auto logs where noted; val on logs 1 and 4;
+test on log 10. Knot IoU from the official function: native 778, wood-clipped, pooled over pixels.
+Results: `logs/yolo_origsplit_20261008/`.
+
+| model | train data | log 1 | log 4 | log 10 | pooled 1/4/10 |
+|---|---|---|---|---|---|
+| YOLO11n-seg 800 (`yolo11n_seg_origsplit_800`) | 317 human frames only | 0.738 | 0.750 | 0.735 | 0.741 |
+| YOLO11n-seg 800 (`yolo11n_seg_origsplit_auto_800`), 35 ep | 51 logs auto + human x5 | 0.764 | 0.760 | 0.739 | 0.756 |
+| U-Net R50 / ConvNeXt-S / EffV2-S (segmentation session) | same as the row above | | | | 0.755 / 0.760 / 0.749 |
+
+Paired block bootstrap vs the YOLO on the same data, pooled (segmentation session):
+- R50: -0.002 [-0.009, +0.007]
+- ConvNeXt-S: +0.004 [-0.004, +0.013]
+- EffV2-S: -0.007 [-0.015, +0.002]
+
+This means architecture parity on identical data. On clean log 10 the U-Nets are +0.008 to +0.013.
+The auto labels plus 5x human weighting add about +0.015 pooled for YOLO.

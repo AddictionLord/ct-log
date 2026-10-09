@@ -36,6 +36,30 @@ Option 1 (point seeds + 20 anchors) gives the best results on any wood type
 and is the recommended deployment path. Option 2 is the zero-effort fallback
 for softwood. Option 3 is the simplest code path but covers fewer frames.
 
+## Knot segmentation default: YOLO11n-seg at 800 px
+
+Per-frame knot masks for auto annotation come from `yolo11n_seg_v5_val10_800` (YOLO11n-seg,
+`imgsz=800`, conf 0.25, union of instance masks clipped to the peel wood mask, no post-filters). This
+is the default in `ann_pipeline/scripts/build_kwp_dataset.py`. On held-out log 10 its pooled knot
+IoU is 0.750, and it finds 93 % of knots. It beats:
+- YOLO11s/m-seg (0.738 / 0.734);
+- the DINOv3 student (0.672);
+- the propagation pipeline, which loses thin and straight knots. Straight-knot Dice on log 2 was
+  0.31 for propagation vs 0.69 for YOLO-seg.
+
+Provenance and the sweep are in `ann_pipeline/DETECTOR_PROVENANCE.md`. Phase2 pre-labels on
+unreviewed logs still come from the older propagation pipeline until replaced.
+
+**Combined default (decided 2026-10-07, interim until further U-Net experiments report):**
+- **Knots:** YOLO11n-seg @800.
+- **Pith:** the segmentation session's smp U-Net (ResNet-50, 800 px), no snap. On log 10 it gets
+  68 % of pith points on the exact pixel and 96 % within 1 px, vs 61 % / 96 % for the snapped
+  2-class OBB.
+- **Wood:** `threshold_peel`.
+
+U-Net pith enters `build_kwp_dataset.py` through `--pith_root` (per-log JSON exported by the
+segmentation session). Without `--pith_root`, the builder falls back to the snapped OBB pith.
+
 ## Detector: single 2-class OBB (knot + pith)
 
 The recommended detector is one **2-class OBB model** (class 0 = knot, class 1 =

@@ -29,6 +29,7 @@ import torch
 from tqdm import tqdm
 from ultralytics import YOLO
 
+from ann_pipeline.pith.detectors import snap_to_darkest
 from ann_pipeline.wood.detectors import threshold_peel
 
 PHASE1_ID = 377327
@@ -105,8 +106,15 @@ def _load_gray_rgb(path: str) -> Tuple[np.ndarray, np.ndarray]:
     return gray, rgb
 
 
-def _yolo_pith(model: YOLO, img_rgb: np.ndarray, conf: float = 0.10) -> Optional[Tuple[float, float]]:
-    """Highest-confidence pith (cls=1) centroid from a 2-class OBB detector."""
+def _yolo_pith(
+    model: YOLO, img_rgb: np.ndarray, conf: float = 0.10, snap_window: int = 5
+) -> Optional[Tuple[float, float]]:
+    """Highest-confidence pith (cls=1) from a 2-class OBB detector, snapped to the darkest pixel.
+
+    With snap_window > 0 the box centre is moved to the darkest pixel in a snap_window x snap_window
+    window and returned as an integer pixel index (what Supervisely points use); 0 returns the raw
+    continuous box centre.
+    """
     res = model.predict(img_rgb, conf=conf, verbose=False)[0]
     if res.obb is None or len(res.obb) == 0:
         return None
@@ -117,7 +125,11 @@ def _yolo_pith(model: YOLO, img_rgb: np.ndarray, conf: float = 0.10) -> Optional
     if len(pith_idx) == 0:
         return None
     best = pith_idx[np.argmax(confs[pith_idx])]
-    return float(xywhr[best, 0]), float(xywhr[best, 1])
+    x, y = float(xywhr[best, 0]), float(xywhr[best, 1])
+    if snap_window <= 0:
+        return x, y
+    sx, sy = snap_to_darkest(img_rgb[..., :3].mean(axis=-1), x, y, window=snap_window)
+    return float(sx), float(sy)
 
 
 def build_auto_annotation(gray: np.ndarray, rgb: np.ndarray, pred_frame: np.ndarray, yolo_model: YOLO) -> dict:

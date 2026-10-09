@@ -1,0 +1,572 @@
+{
+ "version": "kwp-ds-v5",
+ "created": "2026-10-09T08:26:55",
+ "git_commit": "d8194486ca07cd65327ff215726074dd3699c1ed",
+ "git_dirty": true,
+ "generator": {
+  "knot": {
+   "source": "external per-slice knot probabilities from /mnt/D/datasets/ct_log/knot_probs_ens_v4_tta",
+   "description": "mean of v4 U-Nets EffV2-S + ConvNeXt-S (teacher split), 8-way TTA each, p>=0.5; probs /mnt/D/datasets/ct_log/knot_probs_ens_v4_tta (META.json, SHA256SUMS of per-log tars)",
+   "threshold": "p >= 128/255",
+   "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
+   "per_log_inputs_sha256": "see logs.<log>.knot_inputs_sha256 (sha256 of sorted per-file sha256 lines)"
+  },
+  "pith": {
+   "source": "external per-slice pith points from /mnt/D/datasets/ct_log/unet_pith_v1",
+   "meta": {
+    "model": "kwp-v3-unet-r50-800-humanw5-ema-teachersplit",
+    "config": "src/configs/train_kwp_v3_unet_r50_800_humanw5_ema_teachersplit.yaml",
+    "checkpoint": "ckpt_local/kwp_v3_unet_r50_800_humanw5_ema_teachersplit/kwp-v3-unet-r50-800-humanw5-ema-teachersplit/seg_head_epoch_11.pth",
+    "checkpoint_sha256": "54a6ce725022cf8ac7708d96ee0d38d343b43a0b077351736cac858b311ee50a",
+    "epoch": 11,
+    "weights": "EMA weights (best copy saved while EMA weights were swapped in)",
+    "input_stack": "[z-1, z, z+1] slices from <log>/img sorted by page index, clamped at the ends (window=1)",
+    "resize": "native 778x778 -> 800x800 bilinear, ImageNet normalisation",
+    "prediction": "soft-argmax of the pith heatmap channel, normalized (x, y) in [0, 1] with pixel centres at (i + 0.5) / W",
+    "rounding": "x_px = rint(x * 778), y_px = rint(y * 778), clipped to [0, 777]; integer pixel index (Supervisely convention: column x, row y). Same rule as the log-10 evaluation (68% exact, 96% <= 1 px).",
+    "null_pages": "none: the model always predicts a point; it does not detect absence of pith",
+    "snap": "none",
+    "slices_per_log": {
+     "3": 298,
+     "05": 299,
+     "06": 299,
+     "08": 299,
+     "09": 300,
+     "11": 299,
+     "13": 299,
+     "14": 299,
+     "15": 300,
+     "16": 299,
+     "17": 300,
+     "18": 299,
+     "19": 300,
+     "20": 300,
+     "21": 299,
+     "23": 299,
+     "24": 299,
+     "25": 300,
+     "26": 298,
+     "27": 299,
+     "28": 299,
+     "29": 299,
+     "30": 298,
+     "31": 301,
+     "33": 300,
+     "34": 300,
+     "36": 300,
+     "37": 300,
+     "38": 298,
+     "39": 299,
+     "40": 299,
+     "41": 300,
+     "42": 299,
+     "43": 300,
+     "44": 299,
+     "46": 299,
+     "47": 300,
+     "48": 300,
+     "49": 300,
+     "50": 300,
+     "51": 299,
+     "52": 299,
+     "53": 300,
+     "54": 300,
+     "55": 300,
+     "56": 300,
+     "57": 301,
+     "58": 301,
+     "59": 301,
+     "60": 300
+    }
+   }
+  },
+  "wood": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+  "human_root": "/mnt/D/datasets/ct_log/human_reviewed_20260929"
+ },
+ "logs": {
+  "3": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 184,
+   "knot_px": 850315,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/3/img",
+   "knot_inputs_sha256": "8a0e26b33bbfc32374a8b186dba12785ffe65c15a6018b2727f4fda4813dcd92"
+  },
+  "05": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 172,
+   "knot_px": 379340,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/05/img",
+   "knot_inputs_sha256": "f7f9131d1d04ec933df74ee3669af18fd74113123ee331071c2511123417d260"
+  },
+  "06": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 168,
+   "knot_px": 232362,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/06/img",
+   "knot_inputs_sha256": "cf7734c69aa9ee475bc1394c22749ada8ea491b92dd5c655442334f2592fba61"
+  },
+  "08": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 27,
+   "frames_with_knot": 175,
+   "knot_px": 342395,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/08/img",
+   "knot_inputs_sha256": "64f5f68446ad574945b3dbe2f540fed33afe65369ba3f926dcdc6f0211db2b40"
+  },
+  "09": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 140,
+   "knot_px": 151999,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/09/img",
+   "knot_inputs_sha256": "c3a29d8688393ebbe34b35833ac4b93b9ca03ef4ab35316f0a820cec34ba2afa"
+  },
+  "13": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 131,
+   "knot_px": 199368,
+   "img_source": "/mnt/D/datasets/ct_log/generated/13/img",
+   "knot_inputs_sha256": "2e3ef34c5896e489fbc61124f949c3391d90874fc3a9d16502d8a41e0ab4e1c7"
+  },
+  "14": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 166,
+   "knot_px": 471765,
+   "img_source": "/mnt/D/datasets/ct_log/generated/14/img",
+   "knot_inputs_sha256": "3a22f89ac6146e4e9ce414b6f629d74462d67da1761d502f22fb7b0a6ad7ce06"
+  },
+  "15": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 162,
+   "knot_px": 213848,
+   "img_source": "/mnt/D/datasets/ct_log/generated/15/img",
+   "knot_inputs_sha256": "b621c503e543e49c52e9c112cceb76a3db42ecafc8892c82e2bd913c94a19810"
+  },
+  "16": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 169,
+   "knot_px": 243364,
+   "img_source": "/mnt/D/datasets/ct_log/generated/16/img",
+   "knot_inputs_sha256": "d52e2a58e750b4512a2f34d5a262e93f5be608db8c9c434891dd4b2a8e42bec1"
+  },
+  "17": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 206,
+   "knot_px": 514309,
+   "img_source": "/mnt/D/datasets/ct_log/generated/17/img",
+   "knot_inputs_sha256": "bd7c6a21ff627599618edd7149698fe56ffcc485ade69126ff702da8111485a5"
+  },
+  "18": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 159,
+   "knot_px": 210932,
+   "img_source": "/mnt/D/datasets/ct_log/generated/18/img",
+   "knot_inputs_sha256": "287901d51f46b22184bc72462b5625777867b7da615332b61a5f3e152ddaedbc"
+  },
+  "19": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 132,
+   "knot_px": 218404,
+   "img_source": "/mnt/D/datasets/ct_log/generated/19/img",
+   "knot_inputs_sha256": "0acc8cbf1c1db2fe591acebb5d8ceff0118705998476bc747e988f4908a6fc05"
+  },
+  "20": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 168,
+   "knot_px": 240609,
+   "img_source": "/mnt/D/datasets/ct_log/generated/20/img",
+   "knot_inputs_sha256": "62a359b5d6caa03f9019fa4475003dfc53d66ac85a5ac58181de8a8723632ec4"
+  },
+  "21": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 173,
+   "knot_px": 233521,
+   "img_source": "/mnt/D/datasets/ct_log/generated/21/img",
+   "knot_inputs_sha256": "a1d8a914dbd2804f9f92e7afa0cbc3dddf428199c6e7f856b37afa3c2fb27b07"
+  },
+  "23": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 188,
+   "knot_px": 500728,
+   "img_source": "/mnt/D/datasets/ct_log/generated/23/img",
+   "knot_inputs_sha256": "9e1ea05bea1864f473ea82783bad05536a151c556e64e98a283c79a5117b64bc"
+  },
+  "24": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 148,
+   "knot_px": 283010,
+   "img_source": "/mnt/D/datasets/ct_log/generated/24/img",
+   "knot_inputs_sha256": "21dccd641bae2c37511de766f8191773d867876b9d0f5d50b0c1fc46c2b04e98"
+  },
+  "25": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 142,
+   "knot_px": 232081,
+   "img_source": "/mnt/D/datasets/ct_log/generated/25/img",
+   "knot_inputs_sha256": "3b84ae3b28f22987e38196068a9910335e38692f871082b66afc8c90c2d757bf"
+  },
+  "26": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 142,
+   "knot_px": 176229,
+   "img_source": "/mnt/D/datasets/ct_log/generated/26/img",
+   "knot_inputs_sha256": "3ea9a138047808acab5eabe749b8ed848802736ece9e09d817b59d9d5924b2ec"
+  },
+  "27": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 161,
+   "knot_px": 240783,
+   "img_source": "/mnt/D/datasets/ct_log/generated/27/img",
+   "knot_inputs_sha256": "f4c9678c85f494d787e56eca2cef27bfb7075bab2372d617eff9da470f7a1b6a"
+  },
+  "11": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 139,
+   "knot_px": 331655,
+   "img_source": "/mnt/D/datasets/ct_log/generated/11/img",
+   "knot_inputs_sha256": "ecfc769982093e174bf161ea3e9bb67dc38597c08173bd0ca6754276f8266c7f"
+  },
+  "28": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 145,
+   "knot_px": 244596,
+   "img_source": "/mnt/D/datasets/ct_log/generated/28/img",
+   "knot_inputs_sha256": "1782085f5aeb841f076b8c56b54e3bf28afa5f8e4913d173d185548aee2ebbd1"
+  },
+  "29": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 132,
+   "knot_px": 231204,
+   "img_source": "/mnt/D/datasets/ct_log/generated/29/img",
+   "knot_inputs_sha256": "7039fc09c83c616bedbda7be31101bb15441140f12883990cb4b59f58c099b71"
+  },
+  "30": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 184,
+   "knot_px": 296903,
+   "img_source": "/mnt/D/datasets/ct_log/generated/30/img",
+   "knot_inputs_sha256": "fa41c679c6f1d76e5defe044afa7448f4f8b2635d7bf882e328273cc03930598"
+  },
+  "31": {
+   "kind": "auto",
+   "frames": 301,
+   "human_frames": 0,
+   "frames_with_knot": 172,
+   "knot_px": 600162,
+   "img_source": "/mnt/D/datasets/ct_log/generated/31/img",
+   "knot_inputs_sha256": "6aa64c99e488e889629fed061474c4108780ce354ec8286c6cc5488b0966d423"
+  },
+  "33": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 162,
+   "knot_px": 272200,
+   "img_source": "/mnt/D/datasets/ct_log/generated/33/img",
+   "knot_inputs_sha256": "f76385b7a7c32df2bd51d19ed8fc8ed82b9cb559d23280331476fd26cf54542a"
+  },
+  "34": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 160,
+   "knot_px": 322419,
+   "img_source": "/mnt/D/datasets/ct_log/generated/34/img",
+   "knot_inputs_sha256": "ca7d4e579b5b4a5edcfa74855430a81893d2b1fd7f1184417914fd2e69e157d3"
+  },
+  "36": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 187,
+   "knot_px": 392489,
+   "img_source": "/mnt/D/datasets/ct_log/generated/36/img",
+   "knot_inputs_sha256": "7d72d1cc7d3c8fe9654d18732a79902af450effe981b9c1a23e3024d2c2d94e4"
+  },
+  "37": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 145,
+   "knot_px": 273043,
+   "img_source": "/mnt/D/datasets/ct_log/generated/37/img",
+   "knot_inputs_sha256": "beca59a3d909bdb4dde8f44a35c91ecbb408cba4c1a638a0455281846a6b1fda"
+  },
+  "38": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 185,
+   "knot_px": 399663,
+   "img_source": "/mnt/D/datasets/ct_log/generated/38/img",
+   "knot_inputs_sha256": "186859a9450dc870499e8d425b772720aa0cab6fa8e6c906bb4787578009452c"
+  },
+  "39": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 157,
+   "knot_px": 332484,
+   "img_source": "/mnt/D/datasets/ct_log/generated/39/img",
+   "knot_inputs_sha256": "a101f85ae5649ba1169e2109430d33a0aa064055ed4fd221e0a0c8d428981d53"
+  },
+  "40": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 169,
+   "knot_px": 279907,
+   "img_source": "/mnt/D/datasets/ct_log/generated/40/img",
+   "knot_inputs_sha256": "90d4ef35ae6ddcb000f910d1290cf936ddf4d3b9f4c7445eef3f02acc184de63"
+  },
+  "41": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 171,
+   "knot_px": 419130,
+   "img_source": "/mnt/D/datasets/ct_log/generated/41/img",
+   "knot_inputs_sha256": "b6af7942a47dfdbefc187b22efa29a71d7ed659bb0830eee55c92cbe34c0411f"
+  },
+  "42": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 201,
+   "knot_px": 606818,
+   "img_source": "/mnt/D/datasets/ct_log/generated/42/img",
+   "knot_inputs_sha256": "d022129518b417e4aecb771ce681c766ef1863db92db64d2481def22eacde9e8"
+  },
+  "43": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 184,
+   "knot_px": 361318,
+   "img_source": "/mnt/D/datasets/ct_log/generated/43/img",
+   "knot_inputs_sha256": "aa53ff71be2c3ee00a1be7fd8ac4b3dda0b19bba7588ccc5ecd7040776e3d1e7"
+  },
+  "44": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 156,
+   "knot_px": 277174,
+   "img_source": "/mnt/D/datasets/ct_log/generated/44/img",
+   "knot_inputs_sha256": "0ef88ea5abf8c6b89bc243c8c5eafc8e8c3fc691495dd50028419c9ddf7cdebe"
+  },
+  "46": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 166,
+   "knot_px": 332006,
+   "img_source": "/mnt/D/datasets/ct_log/generated/46/img",
+   "knot_inputs_sha256": "5a52a3150c67c7465018cd6aebe1b5eb83ead1ebd1cfb587420648ee1de74187"
+  },
+  "47": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 146,
+   "knot_px": 194226,
+   "img_source": "/mnt/D/datasets/ct_log/generated/47/img",
+   "knot_inputs_sha256": "1e8ea66c13989f8669f5e2ea6c57bdb0405fad079e91b6299f6c87d3be2837a2"
+  },
+  "48": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 115,
+   "knot_px": 208428,
+   "img_source": "/mnt/D/datasets/ct_log/generated/48/img",
+   "knot_inputs_sha256": "116b353e6847f40a599bfd958b9b704738512b404ce7c9440e2d177b9ee5c530"
+  },
+  "49": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 149,
+   "knot_px": 232272,
+   "img_source": "/mnt/D/datasets/ct_log/generated/49/img",
+   "knot_inputs_sha256": "0528aa60fab8821c01911abf602386dee4884910f7bb6df8af7b82f1a7649ef6"
+  },
+  "50": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 109,
+   "knot_px": 157971,
+   "img_source": "/mnt/D/datasets/ct_log/generated/50/img",
+   "knot_inputs_sha256": "65e3b01bc8ff6a9ff337fd9c2f30d75912ba40944da1a9d609d5e48d20f69d0a"
+  },
+  "51": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 207,
+   "knot_px": 387430,
+   "img_source": "/mnt/D/datasets/ct_log/generated/51/img",
+   "knot_inputs_sha256": "81e08911e0030d02d01d24575073e35ce07cda308bd9dda118373e3eaf314a8c"
+  },
+  "52": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 136,
+   "knot_px": 238483,
+   "img_source": "/mnt/D/datasets/ct_log/generated/52/img",
+   "knot_inputs_sha256": "b16006439df2bf8da6477e709068a5c647c5694903cc6ab9f38600f48cd8b337"
+  },
+  "53": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 125,
+   "knot_px": 236272,
+   "img_source": "/mnt/D/datasets/ct_log/generated/53/img",
+   "knot_inputs_sha256": "d677c6b5c13e088f2efc76f5ec17405d49895b46471dda8053ea9c6caedfdf1f"
+  },
+  "54": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 168,
+   "knot_px": 239704,
+   "img_source": "/mnt/D/datasets/ct_log/generated/54/img",
+   "knot_inputs_sha256": "82f3efd8852a1dc8105590534046b39293520b983fb11d8931e68a6584ef21b6"
+  },
+  "55": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 134,
+   "knot_px": 278615,
+   "img_source": "/mnt/D/datasets/ct_log/generated/55/img",
+   "knot_inputs_sha256": "e913c9b56dc0a480ed0b3e12b318beb6f03cb2a6b291a2aa65bd612aea1b921f"
+  },
+  "56": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 175,
+   "knot_px": 309178,
+   "img_source": "/mnt/D/datasets/ct_log/generated/56/img",
+   "knot_inputs_sha256": "0c2de0738d750d1cecd1aa6c41e19c8cccccd540e3d635cd045a4349303bdbe4"
+  },
+  "57": {
+   "kind": "auto",
+   "frames": 301,
+   "human_frames": 0,
+   "frames_with_knot": 177,
+   "knot_px": 315851,
+   "img_source": "/mnt/D/datasets/ct_log/generated/57/img",
+   "knot_inputs_sha256": "db1cc9495618f41c716cf754d50493d4e0f4d13bd5bf0517f799b73fa7e221ee"
+  },
+  "58": {
+   "kind": "auto",
+   "frames": 301,
+   "human_frames": 0,
+   "frames_with_knot": 147,
+   "knot_px": 236549,
+   "img_source": "/mnt/D/datasets/ct_log/generated/58/img",
+   "knot_inputs_sha256": "b5e3da264d1476689c27c82a70f98ad644c27741fa6f867995eac982cd32f796"
+  },
+  "59": {
+   "kind": "auto",
+   "frames": 301,
+   "human_frames": 0,
+   "frames_with_knot": 124,
+   "knot_px": 358472,
+   "img_source": "/mnt/D/datasets/ct_log/generated/59/img",
+   "knot_inputs_sha256": "1818e9b557cb74026aae75f57b5fff1992ffd582ba77c4c18a1dcb4ebebe0faf"
+  },
+  "60": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 184,
+   "knot_px": 229651,
+   "img_source": "/mnt/D/datasets/ct_log/generated/60/img",
+   "knot_inputs_sha256": "2c9794528d7c6a343aa397f55096ef8a271f1ea9b598c46125e14db611a52142"
+  },
+  "1": {
+   "kind": "human",
+   "frames": 291,
+   "img_pages": 292,
+   "frames_with_knot": 170,
+   "knot_px": 439294,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/1/img"
+  },
+  "2": {
+   "kind": "human",
+   "frames": 290,
+   "img_pages": 297,
+   "frames_with_knot": 192,
+   "knot_px": 367600,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/2/img"
+  },
+  "4": {
+   "kind": "human",
+   "frames": 291,
+   "img_pages": 292,
+   "frames_with_knot": 201,
+   "knot_px": 311448,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/4/img"
+  },
+  "10": {
+   "kind": "human",
+   "frames": 293,
+   "img_pages": 299,
+   "frames_with_knot": 177,
+   "knot_px": 233198,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/10/img"
+  }
+ },
+ "manifest": "MANIFEST.sha256 (16140 annotation files)",
+ "manifest_sha256": "f43822ba841c8188be7063beb5626a5f6a1204f1069ee04db68cafea4f1b7f05"
+}

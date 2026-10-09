@@ -20,6 +20,39 @@ from scipy import ndimage as ndi
 XY = Tuple[int, int]
 
 
+def snap_to_darkest(gray: np.ndarray, x: float, y: float, window: int = 5) -> XY:
+    """Move a pith estimate to the darkest pixel in a window around it.
+
+    Annotators place the pith on the darkest pixel of the pith (lower density, dark in CT): the clicked
+    pixel is the darkest of its 5x5 neighbourhood in 59% of 1165 reviewed clicks and within 1 px of it
+    in 90%. Snapping detector output to that pixel matches the exact human pixel in ~61% of slices and
+    within 1 px in 92-95% (eval/pith_2026-09-30.local.md, section 5).
+
+    Args:
+        gray: [H, W] grayscale slice.
+        x: Continuous x in detector coordinates, where pixel i spans [i, i + 1).
+        y: Continuous y in detector coordinates.
+        window: Odd window side in pixels.
+
+    Returns:
+        XY: Integer (column, row) pixel index of the darkest pixel in the window, clipped to the image.
+
+    Raises:
+        ValueError: If window is not a positive odd number.
+    """
+    if window < 1 or window % 2 == 0:
+        msg = "window must be a positive odd number, got %d" % window
+        raise ValueError(msg)
+    h, w = gray.shape[:2]
+    cx = min(max(int(np.floor(x)), 0), w - 1)
+    cy = min(max(int(np.floor(y)), 0), h - 1)
+    r = window // 2
+    x0, y0 = max(0, cx - r), max(0, cy - r)
+    patch = gray[y0 : min(h, cy + r + 1), x0 : min(w, cx + r + 1)]
+    py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
+    return x0 + int(px), y0 + int(py)
+
+
 def image_centre(img: np.ndarray) -> XY:
     """Constant baseline: image geometric centre."""
     h, w = img.shape[:2]
