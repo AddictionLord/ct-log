@@ -782,6 +782,24 @@ logs + human 2, 08 at 5x), exported at native 778, p >= 0.5, not wood-clipped. P
 - YOLO human-only on log 10: 0.735 with 317 frames vs 0.750 with 899 frames (+0.015 from 3x human data).
 - The training-loop metric (800 grid, argmax) understates native IoU by ~0.010-0.016 on these models.
 
+Same data for both (2026-10-09): YOLO11n-seg @800 trained on the U-Net's exact original-split set
+(`yolo11n_seg_origsplit_auto_800`: 51 logs, v3 auto labels + human 2, 08 at 5x, 35 epochs), official
+function: log 1 0.764, log 4 0.760, log 10 0.739, pooled 0.756. Paired bootstrap of the U-Nets against it:
+
+| model | log 1 | log 4 | log 10 | pooled | diff vs YOLO (same data), pooled |
+|---|---|---|---|---|---|
+| YOLO11n-seg, U-Net's data | 0.764 | 0.760 | 0.739 | 0.756 | – |
+| U-Net ResNet-50 | 0.748 | 0.768 | 0.749 | 0.755 | -0.002 [-0.009, +0.007] |
+| U-Net ConvNeXt-S | 0.758 | 0.769 | 0.752 | 0.760 | +0.004 [-0.004, +0.013] |
+| U-Net EfficientNetV2-S | 0.740 | 0.763 | 0.749 | 0.749 | -0.007 [-0.015, +0.002] |
+
+- On identical data the architectures are at parity: every pooled CI spans zero. The U-Nets' lead over
+  the human-only YOLO came from the auto data (+0.015 for YOLO too), not from the architecture.
+- On clean log 10 the U-Nets are ahead (+0.008 to +0.013; ConvNeXt-S [+0.000, +0.028]); YOLO gains on
+  log 1, which selected its best epoch (optimistic). Single runs each.
+- Practical consequence: the case for one U-Net is not better knots, it is equal knots plus pith and wood
+  from the same model.
+
 ### Seed noise of fine-tuned runs: the caveat on everything above (2026-10-04)
 
 An identical repeat of the v3 human 5x run (no fixed seed) gives, paired vs the original:
