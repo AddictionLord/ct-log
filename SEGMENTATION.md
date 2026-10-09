@@ -784,7 +784,26 @@ Test-time augmentation (2026-10-09, `scripts/export_knot_probs.py --tta`: mean o
 TTA gives a single model the same +0.007 as a second model (0.760-0.761 vs 0.762-0.763), but at 8 forward
 passes instead of 2; on top of a two-model average it adds at most +0.002. Both act on the same
 run-to-run variance at knot edges. The EffV2-S + ConvNeXt-S average with TTA (0.765, precision 0.863,
-recall 0.871) is the label source for kwp-ds-v5 (`scripts/export_ensemble_probs.py`). The encoder changed too, but encoders were within
+recall 0.871) is the label source for kwp-ds-v5 (`scripts/export_ensemble_probs.py`).
+
+### Distilling the ensemble (kwp-ds-v5) does not help (2026-10-09)
+
+kwp-ds-v5 = kwp-ds-v4 with the auto-frame knots replaced by that ensemble (p >= 0.5; built by the
+Annotations session, manifest sha256 `f43822ba…`; human frames, pith and wood identical to v4). The
+ensemble labels are tighter than YOLO's (knot pixels per log x0.96 median). ConvNeXt-S student, teacher
+split (`train_kwp_v5_unet_convnext_small_w1_dice_ts.yaml`), log 10, native, p >= 0.5:
+
+| model | plain | 8-way TTA |
+|---|---|---|
+| v4 ConvNeXt-S (runs 1, 2) | 0.752, 0.754 | 0.760, 0.760 |
+| **v5 ConvNeXt-S** | 0.746 (precision 0.851, recall 0.857) | 0.758 |
+| teacher: v4 EffV2-S + ConvNeXt-S average, TTA | – | 0.765 |
+
+v5 is 0.007 below v4 (single run, but the mechanism is visible): recall drops from 0.872-0.880 to 0.857.
+The ensemble's gain is variance reduction at knot edges; its hard labels only transfer its tighter
+masks, so the student undersegments (the confirmation bias expected from self-training on a
+precision-leaning teacher). Better hard labels from a stronger single generator (v3 -> v4) helped;
+labels from an average of students do not. Not pursued further. The encoder changed too, but encoders were within
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
