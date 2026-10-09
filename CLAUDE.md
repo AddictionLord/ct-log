@@ -36,29 +36,42 @@ Option 1 (point seeds + 20 anchors) gives the best results on any wood type
 and is the recommended deployment path. Option 2 is the zero-effort fallback
 for softwood. Option 3 is the simplest code path but covers fewer frames.
 
-## Knot segmentation default: YOLO11n-seg at 800 px
+## Auto-annotation default: ensemble of two v4 U-Nets (decided 2026-10-09)
 
-Per-frame knot masks for auto annotation come from `yolo11n_seg_v5_val10_800` (YOLO11n-seg,
-`imgsz=800`, conf 0.25, union of instance masks clipped to the peel wood mask, no post-filters). This
-is the default in `ann_pipeline/scripts/build_kwp_dataset.py`. On held-out log 10 its pooled knot
-IoU is 0.750, and it finds 93 % of knots. It beats:
-- YOLO11s/m-seg (0.738 / 0.734);
-- the DINOv3 student (0.672);
-- the propagation pipeline, which loses thin and straight knots. Straight-knot Dice on log 2 was
-  0.31 for propagation vs 0.69 for YOLO-seg.
+Knots and pith for auto annotation come from the probability average of two smp U-Nets trained on
+kwp-ds-v4 (teacher split: auto logs + human 1, 2, 4, 08; log 10 held out), no test-time augmentation:
+- EfficientNetV2-S: `src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts.yaml`, checkpoint sha256 `0a7f6dee4cd4…`;
+- ConvNeXt-S: `src/configs/train_kwp_v4_unet_convnext_small_w1_dice_ts.yaml`, checkpoint sha256 `0a99076ce66d…`.
 
-Provenance and the sweep are in `ann_pipeline/DETECTOR_PROVENANCE.md`. Phase2 pre-labels on
-unreviewed logs still come from the older propagation pipeline until replaced.
+Both checkpoints are on euler under `ckpt_local/kwp_v4_unet_*_w1_dice_ts/*/seg_head_epoch_11.pth`.
 
-**Combined default (decided 2026-10-07, interim until further U-Net experiments report):**
-- **Knots:** YOLO11n-seg @800.
-- **Pith:** the segmentation session's smp U-Net (ResNet-50, 800 px), no snap. On log 10 it gets
-  68 % of pith points on the exact pixel and 96 % within 1 px, vs 61 % / 96 % for the snapped
-  2-class OBB.
-- **Wood:** `threshold_peel`.
+Knots = mean knot softmax >= 0.5. Pith = mean of the two soft-argmax points, rounded to the pixel, no snap.
+Wood stays `threshold_peel`; the U-Net wood (IoU 0.987) is not used by the builder.
 
-U-Net pith enters `build_kwp_dataset.py` through `--pith_root` (per-log JSON exported by the
-segmentation session). Without `--pith_root`, the builder falls back to the snapped OBB pith.
+On held-out log 10 (native 778, pooled):
+- **Knot IoU 0.763**, vs 0.753 for one v4 U-Net, 0.750 for YOLO11n-seg @800 and 0.672 for DINOv3.
+- **Pith:** 67 % on the exact pixel, 95 % within 1 px, mean 0.38 px.
+
+Evidence is in `SEGMENTATION.md`:
+- On identical training data, U-Net and YOLO knots are level (the U-Net's gain comes from better
+  pseudo-labels and averaging).
+- 8-way TTA adds only +0.002 on top of the average, at 8x the cost.
+- Distilling the ensemble into one model (kwp-ds-v5) lost 0.007.
+
+Producing the inputs for `build_kwp_dataset.py`:
+- **Knots:** `scripts/export_ensemble_probs.py --member <cfg>=<ckpt> --member <cfg>=<ckpt>` (no
+  `--tta`) writes per-slice probability PNGs, which go to `--knot_root`.
+- **Pith:** per-log JSON via `--pith_root`. `scripts/export_pith.py` exports a single model. An
+  ensemble pith export (mean of the two points, as in `scripts/eval_ensemble_pith_wood.py`) still
+  has to be added before deployment.
+
+Fallbacks:
+- **Knots:** without `--knot_root`, the builder uses YOLO11n-seg @800 (`yolo11n_seg_v5_val10_800`,
+  conf 0.25). It was the previous default (0.750 on log 10; provenance in
+  `ann_pipeline/DETECTOR_PROVENANCE.md`).
+- **Pith:** without `--pith_root`, the builder uses the snapped 2-class OBB pith.
+
+Phase2 pre-labels on unreviewed logs still come from the older propagation pipeline until replaced.
 
 ## Detector: single 2-class OBB (knot + pith)
 
