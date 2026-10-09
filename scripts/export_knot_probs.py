@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--log_dir", type=Path, required=True, help="Log directory with img/page_*.tiff.")
     parser.add_argument("--out_dir", type=Path, required=True, help="Output directory for page_XXX.png.")
     parser.add_argument("--batch_size", type=int, default=8, help="Inference batch size.")
+    parser.add_argument("--tta", action="store_true", help="Average over the 8 rotations/flips of the input.")
     args = parser.parse_args()
 
     config = KwpTrainingConfig.from_yaml(args.config)
@@ -48,13 +49,32 @@ def main() -> None:
         native_size = stacks.shape[-2:]
         images = F.interpolate(stacks, size=tuple(config.resolution), mode="bilinear", align_corners=False)
         with torch.no_grad():
-            features = extract_features(backbone, transform(images.to(device)), config.n_layers, config.backbone_bf16)
-            probs = seg_head(features).float().softmax(dim=1)[:, knot_id : knot_id + 1]
+            probs = knot_probs(backbone, seg_head, transform(images.to(device)), config, knot_id, args.tta)
             probs = F.interpolate(probs, size=tuple(native_size), mode="bilinear", align_corners=False)
         for position, prob in zip(positions, probs[:, 0].cpu().numpy()):
             image = Image.fromarray(np.round(np.clip(prob, 0.0, 1.0) * 255).astype(np.uint8))
             image.save(args.out_dir / f"{paths[position].stem.split('.')[0]}.png")
     print("exported %d slices to %s" % (len(paths), args.out_dir))
+
+
+def knot_probs(
+    backbone: torch.nn.Module,
+    seg_head: torch.nn.Module,
+    images: torch.Tensor,
+    config: KwpTrainingConfig,
+    knot_id: int,
+    tta: bool,
+) -> torch.Tensor:
+    transforms = [(k, flip) for k in range(4) for flip in (False, True)] if tta else [(0, False)]
+    total = None
+    for k, flip in transforms:
+        view = torch.rot90(images.flip(-1) if flip else images, k, dims=(-2, -1))
+        features = extract_features(backbone, view, config.n_layers, config.backbone_bf16)
+        probs = seg_head(features).float().softmax(dim=1)[:, knot_id : knot_id + 1]
+        probs = torch.rot90(probs, -k, dims=(-2, -1))
+        probs = probs.flip(-1) if flip else probs
+        total = probs if total is None else total + probs
+    return total / len(transforms)
 
 
 def load_stack(paths: List[Path], position: int, window: int) -> torch.Tensor:

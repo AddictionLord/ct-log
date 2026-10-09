@@ -767,7 +767,24 @@ ConvNeXt-S): 0.754 (precision 0.840, recall 0.880). Log 10, native, p >= 0.5:
 
 The v4 gain is reproducible: three v4 runs (0.752-0.754, spread 0.002) all above both v3 runs (+0.008).
 Averaging two models adds ~+0.009 on either label set, so the v4 pair (0.762-0.763) is +0.012 over the v3
-pair and +0.012-0.013 over YOLO n@800. Three models add only +0.001 over two. The encoder changed too, but encoders were within
+pair and +0.012-0.013 over YOLO n@800. Three models add only +0.001 over two.
+
+Test-time augmentation (2026-10-09, `scripts/export_knot_probs.py --tta`: mean of the knot softmax over the
+8 rotations/flips), log 10, native, p >= 0.5:
+
+| model | plain | 8-way TTA |
+|---|---|---|
+| v4 EffV2-S | 0.754 | 0.761 |
+| v4 ConvNeXt-S | 0.752 | 0.760 |
+| v4 ConvNeXt-S, run 2 | 0.754 | 0.760 |
+| average EffV2-S + ConvNeXt-S | 0.763 | **0.765** |
+| average ConvNeXt-S runs 1 + 2 | 0.762 | 0.761 |
+| average of all three | 0.764 | 0.765 (TTA) |
+
+TTA gives a single model the same +0.007 as a second model (0.760-0.761 vs 0.762-0.763), but at 8 forward
+passes instead of 2; on top of a two-model average it adds at most +0.002. Both act on the same
+run-to-run variance at knot edges. The EffV2-S + ConvNeXt-S average with TTA (0.765, precision 0.863,
+recall 0.871) is the label source for kwp-ds-v5 (`scripts/export_ensemble_probs.py`). The encoder changed too, but encoders were within
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
