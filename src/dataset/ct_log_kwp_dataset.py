@@ -4,15 +4,17 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
+from src.dataset.augment import augment_sample
 from src.dataset.kwp_mask import KwpMaskBuilder
 import torch
 from torchvision import transforms
 
 PAGE_RE = re.compile(r"page_(\d+)")
+HUMAN_REVIEW_TAG = "bumaska"
 
 
 class CTLogKwpDataset(torch.utils.data.Dataset):
-    """2.5D knot/wood/pith segmentation dataset over full contiguous CT logs.
+    """2.5D knot/wood segmentation dataset over full contiguous CT logs.
 
     Each item is a center slice plus its axial neighbors stacked into the channel
     dimension. With ``window=1`` the channels are ``[z-1, z, z+1]`` (Option A).
@@ -36,22 +38,25 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         resolution: Optional[Tuple[int, int]] = None,
         window: int = 1,
         pith_radius: int = 3,
+        augment: bool = False,
     ) -> None:
         """Initialize the dataset.
 
         Args:
             log_dirs: One directory per log, each with img/ and ann/ subdirectories.
             resolution: Target (height, width) for images and masks, or None for native.
-            window: Number of neighbor slices on each side. 1 => [z-1, z, z+1] 2.5D,
+            window: Number of neighbor slices on each side (0-3). k >= 1 => [z-k .. z+k] 2.5D,
                 0 => center slice replicated 3x (single-slice baseline).
             pith_radius: Radius of the rasterized pith point blob.
+            augment: Apply random rotation, flip and intensity jitter (training only).
         """
-        if window not in (0, 1):
-            message = f"window must be 0 or 1 to fit three channels, got {window}"
+        if window not in (0, 1, 2, 3):
+            message = f"window must be 0-3, got {window}"
             raise ValueError(message)
 
         self.resolution = resolution
         self.window = window
+        self.augment = augment
         self.mask_builder = KwpMaskBuilder(pith_radius=pith_radius)
         self.to_tensor = transforms.ToTensor()
 
@@ -101,12 +106,9 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         if self.window == 0:
             return []
 
-        prev_position = max(position - 1, 0)
-        next_position = min(position + 1, len(sorted_indices) - 1)
-        return [
-            index_to_path[sorted_indices[prev_position]],
-            index_to_path[sorted_indices[next_position]],
-        ]
+        offsets = [offset for offset in range(-self.window, self.window + 1) if offset != 0]
+        last = len(sorted_indices) - 1
+        return [index_to_path[sorted_indices[min(max(position + offset, 0), last)]] for offset in offsets]
 
     @staticmethod
     def _make_resize(
@@ -120,6 +122,19 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
     def _load_slice(self, path: Path) -> torch.Tensor:
         image = Image.open(path).convert("L")
         return self.to_tensor(image)
+
+    def human_reviewed(self) -> List[bool]:
+        """Whether each sample's annotation carries the human-review tag (``bumaska``).
+
+        Returns:
+            List[bool]: one flag per sample, in dataset order.
+        """
+        flags = []
+        for sample in self.samples:
+            with sample["ann"].open("r") as f:
+                tags = json.load(f).get("tags", [])
+            flags.append(any(tag.get("name") == HUMAN_REVIEW_TAG for tag in tags))
+        return flags
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -140,9 +155,8 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
         if self.window == 0:
             channels = center.repeat(3, 1, 1)
         else:
-            prev_slice = self._load_slice(sample["neighbors"][0])
-            next_slice = self._load_slice(sample["neighbors"][1])
-            channels = torch.cat([prev_slice, center, next_slice], dim=0)
+            neighbors = [self._load_slice(path) for path in sample["neighbors"]]
+            channels = torch.cat(neighbors[: self.window] + [center] + neighbors[self.window :], dim=0)
 
         image = self.resize_image(channels)
 
@@ -150,5 +164,15 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
             annotation = json.load(f)
         mask = self.mask_builder.build(annotation).unsqueeze(0)
         mask = self.resize_mask(mask).squeeze(0)
+        pith_xy = self.mask_builder.pith_xy_normalized(annotation)
+        if self.augment:
+            image, mask, pith_xy = augment_sample(image, mask, pith_xy)
 
-        return {"image": image, "mask": mask, "path": str(sample["center"])}
+        human = any(tag.get("name") == HUMAN_REVIEW_TAG for tag in annotation.get("tags", []))
+        return {
+            "image": image,
+            "mask": mask,
+            "pith_xy": pith_xy,
+            "human": torch.tensor(human),
+            "path": str(sample["center"]),
+        }

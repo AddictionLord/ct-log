@@ -1,0 +1,97 @@
+# Class-balanced follow-up to kwp-v1-baseline-overnight.
+#
+# Same split, model and schedule as train_kwp_v1.yaml (see there for the split rationale).
+# The only change is capped inverse-frequency class weighting on the focal + Tversky loss, to test
+# whether it helps knot IoU given the severe pixel imbalance measured on this train set
+# (scripts/compute_class_pixel_counts.py --config src/configs/train_kwp_v1.yaml):
+#
+#   background  3,226,729,598 px  (89.13%)
+#   wood          388,031,918 px  (10.72%)
+#   knot            5,227,266 px  ( 0.14%)   ~74x rarer than wood
+# Pith counts are omitted because pith is regression-only now.
+#
+# class_weighting: effective_number was tried first and rejected: at this pixel scale, Cui et
+# al.'s typical beta (0.9-0.9999, calibrated for instance/image counts) makes beta^n underflow
+# to 0 for every class, silently collapsing the weights to uniform (see
+# src/utils/class_balance.py). A correctly scaled beta (~1 - 1e-7) exists but only separates
+# knot/pith from wood/background, not wood from background (both still underflow). Capped
+# inverse-frequency weighting retains count-derived weights without an extreme rare-class ratio.
+
+num_classes: 3
+lr: 0.0001
+num_epochs: 40
+resolution: [320, 320]
+backbone_weights: /mnt/D/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /mnt/D/models/ct-log/kwp_v1_class_weighted.pth
+
+window: 1
+n_layers: 4
+pith_radius: 3
+
+pith_regression: true
+pith_loss_weight: 1.0
+
+train_logs:
+  - /mnt/D/datasets/ct_log/377328_phase2/2
+  - /mnt/D/datasets/ct_log/377328_phase2/3
+  - /mnt/D/datasets/ct_log/377328_phase2/05
+  - /mnt/D/datasets/ct_log/377328_phase2/06
+  - /mnt/D/datasets/ct_log/377328_phase2/08
+  - /mnt/D/datasets/ct_log/377328_phase2/09
+  - /mnt/D/datasets/ct_log/generated/13
+  - /mnt/D/datasets/ct_log/generated/14
+  - /mnt/D/datasets/ct_log/generated/15
+  - /mnt/D/datasets/ct_log/generated/16
+  - /mnt/D/datasets/ct_log/generated/17
+  - /mnt/D/datasets/ct_log/generated/18
+  - /mnt/D/datasets/ct_log/generated/19
+  - /mnt/D/datasets/ct_log/generated/20
+  - /mnt/D/datasets/ct_log/generated/21
+  - /mnt/D/datasets/ct_log/generated/23
+  - /mnt/D/datasets/ct_log/generated/24
+  - /mnt/D/datasets/ct_log/generated/25
+  - /mnt/D/datasets/ct_log/generated/26
+  - /mnt/D/datasets/ct_log/generated/27
+val_logs:
+  - /mnt/D/datasets/ct_log/378193_human_collection/1
+  - /mnt/D/datasets/ct_log/378193_human_collection/4
+test_logs:
+  - /mnt/D/datasets/ct_log/378193_human_collection/10
+
+batch_size: 4
+num_workers: 4
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 5.0
+tversky_alpha: 0.3
+tversky_beta: 0.7
+ignore_background_in_tversky: true
+
+class_weighting: capped_inverse_frequency
+class_weight_power: 1.0
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
+
+# Cosine LR to reach a real converged baseline, matching kwp-v1-baseline-overnight so the
+# comparison isolates the class-weighting effect.
+lr_schedule: cosine
+
+log_interval: 200
+train_eval_interval: 10
+
+resume: true
+
+use_local_logger: true
+local_log_dir: logs/kwp_v1_class_weighted
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-v1
+mlflow_run_name: null
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
+
+mlflow_model_min_improvement: 0.005
+local_checkpoint_dir: /tmp/ctlog-checkpoints
+local_checkpoint_keep: 5
+viz_interval: 5
+viz_num_frames: 4

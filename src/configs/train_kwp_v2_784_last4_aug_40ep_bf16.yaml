@@ -1,0 +1,96 @@
+# 40-epoch version of train_kwp_v2_784_last4_aug_bf16.yaml. 20-ep result: test knot 0.674 (no-aug 0.680),
+# but the gap closed (ep 15: log-2 probe 0.700 vs val 0.659, was 0.781 vs 0.679) and val was still
+# rising when cosine ended (knot 0.659 -> 0.676 ep 14 -> 19, val loss 0.1169 = lowest of all runs).
+# Augmentation slows fitting, so the 20-epoch budget was likely too short.
+# Best setup so far (train_kwp_v2_784_last4_lr3e5_bf16.yaml: last 4 blocks, lr 3e-5, 20 ep, bf16;
+# test knot 0.680) plus training augmentation: uniform 0-360 deg rotation, horizontal flip (p 0.5),
+# intensity jitter (p 0.8: gamma 0.8-1.25, contrast 0.8-1.2, brightness +-0.08, noise sigma <= 0.02).
+# The pith target is rotated/flipped with the image. Train-eval runs on non-augmented train data.
+# Question: the model now fits train logs much better than unseen ones (ep 15: log-2 probe 0.781 vs
+# val 0.679, val loss rising from ep 9). Does augmentation close that gap and lift val/test?
+# num_workers 6 now that /dev/shm is 2 GB (~100 MB shm per prefetched batch; 8+ risks the 2 GB cap).
+
+dataset_version: kwp-ds-v2
+backbone_bf16: true
+backbone_trainable_blocks: 4
+backbone_lr: 0.00003
+augment: true
+
+num_classes: 3
+lr: 0.0001
+num_epochs: 40
+resolution: [784, 784]
+backbone_weights: /home/jovyan/work/ctlog-eval/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /home/jovyan/work/ctlog-eval/ckpt/kwp_v2_784_last4_aug_40ep_bf16.pth
+
+window: 1
+n_layers: 4
+pith_radius: 3
+
+pith_regression: true
+pith_loss_weight: 1.0
+
+train_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/2
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/3
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/05
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/06
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/08
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/09
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/13
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/14
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/15
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/16
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/17
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/18
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/19
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/20
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/21
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/23
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/24
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/25
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/26
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/27
+val_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/1
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/4
+test_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/10
+train_probe_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/2
+
+batch_size: 8
+num_workers: 6
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 5.0
+tversky_alpha: 0.3
+tversky_beta: 0.7
+ignore_background_in_tversky: true
+
+class_weighting: capped_inverse_frequency
+class_weight_power: 1.0
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
+
+lr_schedule: cosine
+
+log_interval: 200
+train_eval_interval: 5
+
+resume: true
+
+use_local_logger: true
+local_log_dir: /home/jovyan/work/ctlog-eval/logs/kwp_v2_784_last4_aug_40ep_bf16
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-v1
+mlflow_run_name: kwp-v2-784-last4-aug-40ep-bf16
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
+
+mlflow_model_min_improvement: 0.005
+local_checkpoint_dir: /home/jovyan/work/ctlog-eval/ckpt_local/kwp_v2_784_last4_aug_40ep_bf16
+local_checkpoint_keep: 5
+viz_interval: 5
+viz_num_frames: 4

@@ -1,0 +1,89 @@
+# kwp-ds-v2 at 784 px, 20 epochs, bf16, last 4 DINOv3 blocks (+ output norm) trainable at
+# lr 1e-5, head at 1e-4. At 784 the train/val gap is small (ep 10: train-eval knot 0.670, log-2
+# probe 0.655, val 0.632) and val was still rising at ep 19, so extra capacity is worth testing.
+# Baseline: kwp-v2-capped-nopith-784-20ep (frozen, fp32), test knot 0.633. Same schedule/epochs.
+# Fine-tuned blocks are saved next to the head as <checkpoint>.backbone.pth (not uploaded to MLflow).
+
+dataset_version: kwp-ds-v2
+backbone_bf16: true
+backbone_trainable_blocks: 4
+backbone_lr: 0.00001
+
+num_classes: 3
+lr: 0.0001
+num_epochs: 20
+resolution: [784, 784]
+backbone_weights: /home/jovyan/work/ctlog-eval/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /home/jovyan/work/ctlog-eval/ckpt/kwp_v2_784_last4_bf16.pth
+
+window: 1
+n_layers: 4
+pith_radius: 3
+
+pith_regression: true
+pith_loss_weight: 1.0
+
+train_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/2
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/3
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/05
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/06
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/08
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/09
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/13
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/14
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/15
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/16
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/17
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/18
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/19
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/20
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/21
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/23
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/24
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/25
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/26
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/27
+val_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/1
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/4
+test_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/10
+train_probe_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v2/2
+
+batch_size: 8
+num_workers: 0
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 5.0
+tversky_alpha: 0.3
+tversky_beta: 0.7
+ignore_background_in_tversky: true
+
+class_weighting: capped_inverse_frequency
+class_weight_power: 1.0
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
+
+lr_schedule: cosine
+
+log_interval: 200
+train_eval_interval: 5
+
+resume: true
+
+use_local_logger: true
+local_log_dir: /home/jovyan/work/ctlog-eval/logs/kwp_v2_784_last4_bf16
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-v1
+mlflow_run_name: kwp-v2-784-last4-bf16
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
+
+mlflow_model_min_improvement: 0.005
+local_checkpoint_dir: /home/jovyan/work/ctlog-eval/ckpt_local/kwp_v2_784_last4_bf16
+local_checkpoint_keep: 5
+viz_interval: 5
+viz_num_frames: 4

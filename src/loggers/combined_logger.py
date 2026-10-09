@@ -1,4 +1,7 @@
-from typing import Any
+from typing import Any, Dict, Optional
+
+import numpy as np
+import torch
 
 from src.loggers.ilogger import ILogger
 from src.utils.metrics import EpochMetrics
@@ -38,15 +41,49 @@ class CombinedLogger(ILogger):
         for logger in self.loggers:
             logger.log_params(params)
 
-    def log_model(self, model: Any, name: str) -> None:
+    def log_tags(self, tags: Dict[str, str]) -> None:
+        """Log tags to all loggers.
+
+        Args:
+            tags: Tag name to value.
+        """
+        for logger in self.loggers:
+            logger.log_tags(tags)
+
+    def log_model(
+        self, model: Any, name: str, input_example: Optional[torch.Tensor] = None, step: Optional[int] = None
+    ) -> None:
         """Log a model to all loggers.
 
         Args:
             model: Model to log.
             name: Name or identifier for the model.
+            input_example: [B, ...] example input for loggers that export a traced graph.
+            step: Epoch the model belongs to.
         """
         for logger in self.loggers:
-            logger.log_model(model, name)
+            logger.log_model(model, name, input_example, step)
+
+    def log_image(self, image: np.ndarray, key: str, step: int) -> None:
+        """Log an image to all loggers.
+
+        Args:
+            image: [H, W, 3] uint8 RGB image.
+            key: Stable name of the image series.
+            step: Epoch the image belongs to.
+        """
+        for logger in self.loggers:
+            logger.log_image(image, key, step)
+
+    def log_dict(self, data: Dict[str, Any], artifact_file: str) -> None:
+        """Log a dictionary file to all loggers.
+
+        Args:
+            data: JSON-serializable dictionary.
+            artifact_file: Relative file name, e.g. "config.yaml".
+        """
+        for logger in self.loggers:
+            logger.log_dict(data, artifact_file)
 
     def end(self) -> None:
         """Finalize all logging sessions."""

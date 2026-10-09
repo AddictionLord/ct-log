@@ -6,28 +6,54 @@ import torch
 
 
 class KwpMaskBuilder:
-    """Builds single-channel 3-class masks (knot / wood / pith) from Supervisely annotations.
+    """Builds single-channel 3-class masks (background / wood / knot) from annotations.
 
     Class ids:
         0 = background
         1 = wood
         2 = knot
-        3 = pith
 
-    Higher-priority classes overwrite lower ones where they overlap. Pith (a point)
-    sits on top of knot, which sits on top of wood.
+    Higher-priority classes overwrite lower ones where they overlap. Knot sits on top
+    of wood. Pith remains available through pith_xy_normalized for regression only.
     """
 
     class_to_id: ClassVar[Dict[str, int]] = {
         "background": 0,
         "wood": 1,
         "knot": 2,
-        "pith": 3,
     }
-    draw_order: ClassVar[List[str]] = ["wood", "knot", "pith"]
+    draw_order: ClassVar[List[str]] = ["wood", "knot"]
+
+    @classmethod
+    def class_names(cls) -> List[str]:
+        """Class names ordered by class id.
+
+        Returns:
+            List[str]: Name of each class, index = class id.
+        """
+        return sorted(cls.class_to_id, key=cls.class_to_id.get)
 
     def __init__(self, pith_radius: int = 3) -> None:
         self.pith_radius = pith_radius
+
+    @staticmethod
+    def pith_xy_normalized(annotation: Dict[str, Any]) -> torch.Tensor:
+        """Extract the pith point as normalized (x, y), resolution-independent.
+
+        Args:
+            annotation: Supervisely image annotation dict.
+
+        Returns:
+            torch.Tensor: [3] tensor (x, y, valid); valid is 0.0 when the slice
+                has no pith annotation, in which case x and y are 0.
+        """
+        height = annotation["size"]["height"]
+        width = annotation["size"]["width"]
+        for obj in annotation["objects"]:
+            if obj["classTitle"].lower().replace(" ", "_") == "pith":
+                x, y = obj["points"]["exterior"][0]
+                return torch.tensor([x / width, y / height, 1.0], dtype=torch.float32)
+        return torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
 
     def build(self, annotation: Dict[str, Any]) -> torch.Tensor:
         """Rasterize a Supervisely annotation into a [H, W] int64 class-id mask.

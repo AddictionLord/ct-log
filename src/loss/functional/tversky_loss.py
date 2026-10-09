@@ -9,6 +9,7 @@ def multiclass_tversky_loss(
     beta: float = 0.7,
     smooth: int = 1,
     ignore_background: bool = False,
+    class_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes Tversky Loss for multi-class segmentation.
 
@@ -23,6 +24,8 @@ def multiclass_tversky_loss(
         beta: Weight for false negatives (0 to 1).
         smooth: Smoothing factor.
         ignore_background: If True, class index 0 is excluded from the average.
+        class_weights: Per-class weights (C,), e.g. from class_balance.effective_number_weights.
+            Weights of excluded classes (background, if ignore_background) are simply unused.
 
     Returns:
         torch.Tensor: Scalar Tversky Loss.
@@ -30,7 +33,7 @@ def multiclass_tversky_loss(
     tversky = torch.tensor(0.0, device=pred.device)
     num_classes: int = pred.shape[1]
     start_class = 1 if ignore_background else 0
-    counted_classes = num_classes - start_class
+    counted_weight = torch.tensor(0.0, device=pred.device)
 
     pred = F.softmax(pred, dim=1)
 
@@ -45,6 +48,8 @@ def multiclass_tversky_loss(
         tversky_index = (true_positives + smooth) / (
             true_positives + alpha * false_positives + beta * false_negatives + smooth
         )
-        tversky += tversky_index.mean()
+        weight = class_weights[c] if class_weights is not None else 1.0
+        tversky += weight * tversky_index.mean()
+        counted_weight = counted_weight + weight
 
-    return 1 - tversky.mean() / counted_classes
+    return 1 - tversky / counted_weight

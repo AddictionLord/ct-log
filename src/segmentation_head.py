@@ -1,7 +1,11 @@
-from typing import Tuple
+import os
+from pathlib import Path
+from typing import Any, Optional, Tuple
 
 import torch
 from torch import nn
+
+from src.unet_model import CachedPithHead, ImageBackbone, UnetSegPith, soft_argmax
 
 
 class SimpleSegmentationHead(nn.Module):
@@ -17,6 +21,7 @@ class SimpleSegmentationHead(nn.Module):
         """
         super().__init__()
 
+        self.feature_dim = feature_dim
         self.patch_size = 16
         self.feature_map_size = input_size // self.patch_size  # 14 for 224x224
 
@@ -47,9 +52,7 @@ class SimpleSegmentationHead(nn.Module):
         batch_size, num_patches, feature_dim = patch_features.shape
 
         # Reshape to spatial feature map
-        spatial_features = patch_features.view(
-            batch_size, self.feature_map_size, self.feature_map_size, feature_dim
-        )
+        spatial_features = patch_features.view(batch_size, self.feature_map_size, self.feature_map_size, feature_dim)
         spatial_features = spatial_features.permute(0, 3, 1, 2)  # [B, C, H, W]
 
         # Decode to full resolution
@@ -57,20 +60,157 @@ class SimpleSegmentationHead(nn.Module):
 
         return segmentation_logits
 
+    def example_input(self, batch_size: int = 2) -> torch.Tensor:
+        """Zero patch features matching the forward input, for tracing and export.
+
+        Args:
+            batch_size: Batch size of the example; keep > 1 so export treats it as dynamic.
+
+        Returns:
+            torch.Tensor: [B, num_patches, feature_dim] zeros on the head's device.
+        """
+        device = next(self.parameters()).device
+        return torch.zeros(batch_size, self.feature_map_size**2, self.feature_dim, device=device)
+
+
+class PithRegressionHead(nn.Module):
+    """Predicts normalized pith (x, y) from pooled DINOv3 patch features.
+
+    Pith is a single point per slice. At a 16x-downsampled output grid a
+    rasterized pith blob is sub-pixel, so segmenting it is ill-posed (measured
+    ceiling IoU 0.000); regressing the coordinate directly is well-posed and
+    matches how the annotation pipeline reports pith (Euclidean pixel error).
+    """
+
+    def __init__(self, feature_dim: int = 1024, hidden_dim: int = 256):
+        """Initialize the pith regression head.
+
+        Args:
+            feature_dim: Feature dimension from DINOv3 (1024 per layer for ViT-L).
+            hidden_dim: Width of the hidden layer.
+        """
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, patch_features: torch.Tensor) -> torch.Tensor:
+        """Predict normalized pith coordinates.
+
+        Args:
+            patch_features: [B, num_patches, feature_dim] patch tokens.
+
+        Returns:
+            torch.Tensor: [B, 2] normalized (x, y) in [0, 1].
+        """
+        pooled = patch_features.mean(dim=1)
+        return self.mlp(pooled)
+
+
+class PithHeatmapHead(nn.Module):
+    """Predicts normalized pith (x, y) as the soft-argmax of a spatial heatmap (DSNT-style).
+
+    Unlike PithRegressionHead, which mean-pools all patches and must recover absolute position
+    from the pooled vector, this head keeps the patch grid: a small conv decoder produces one
+    logit map at 4x the patch-grid resolution, a softmax turns it into a probability map and the
+    expected pixel-centre coordinate is the prediction (differentiable, sub-pixel).
+    """
+
+    def __init__(self, feature_dim: int, input_size: int, hidden_dim: int = 256):
+        """Initialize the heatmap head.
+
+        Args:
+            feature_dim: Feature dimension of the concatenated patch tokens.
+            input_size: Square input resolution; the patch grid is input_size // 16.
+            hidden_dim: Channels after the 1x1 reduction.
+        """
+        super().__init__()
+        self.grid = input_size // 16
+        self.net = nn.Sequential(
+            nn.Conv2d(feature_dim, hidden_dim, 1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(hidden_dim, 128, 4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 1, 3, padding=1),
+        )
+
+    def forward(self, patch_features: torch.Tensor) -> torch.Tensor:
+        """Predict normalized pith coordinates.
+
+        Args:
+            patch_features: [B, num_patches, feature_dim] patch tokens.
+
+        Returns:
+            torch.Tensor: [B, 2] normalized (x, y) in [0, 1].
+        """
+        batch_size, _, feature_dim = patch_features.shape
+        spatial = patch_features.view(batch_size, self.grid, self.grid, feature_dim).permute(0, 3, 1, 2)
+        return soft_argmax(self.net(spatial)[:, 0])
+
+
+def build_pith_head(head_type: str, feature_dim: int, input_size: int) -> nn.Module:
+    """Create the pith head selected by the training config.
+
+    Args:
+        head_type: "pooled_mlp" (global mean-pool + MLP) or "heatmap" (soft-argmax heatmap).
+        feature_dim: Feature dimension of the concatenated patch tokens.
+        input_size: Square input resolution.
+
+    Returns:
+        nn.Module: pith head mapping [B, num_patches, feature_dim] to [B, 2] normalized (x, y).
+
+    Raises:
+        ValueError: For an unknown head type.
+    """
+    if head_type == "pooled_mlp":
+        return PithRegressionHead(feature_dim=feature_dim)
+    if head_type == "heatmap":
+        return PithHeatmapHead(feature_dim=feature_dim, input_size=input_size)
+    msg = f"Unknown pith head type {head_type}"
+    raise ValueError(msg)
+
+
+def dinov3_repo_dir() -> str:
+    """Locate the local DINOv3 torch.hub repo on this machine.
+
+    Order: $DINOV3_REPO_DIR, <repo root>/dinov3 (euler: ~/work/ctlog-eval/dinov3), then a sibling
+    checkout next to the repo (local: ~/code/dinov3).
+
+    Returns:
+        str: Directory containing hubconf.py.
+
+    Raises:
+        FileNotFoundError: If no candidate contains hubconf.py.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [os.environ.get("DINOV3_REPO_DIR"), repo_root / "dinov3", repo_root.parent / "dinov3"]
+    for candidate in candidates:
+        if candidate and (Path(candidate) / "hubconf.py").exists():
+            return str(candidate)
+    msg = f"No DINOv3 hub repo with hubconf.py among {candidates}"
+    raise FileNotFoundError(msg)
+
 
 def create_dinov3_segmentor(
-    backbone_weights: str, num_classes: int = 150, input_size: int = 224
+    backbone_weights: str, num_classes: int = 150, input_size: int = 224, n_layers: int = 1
 ) -> Tuple[nn.Module, nn.Module]:
     """Create DINOv3 backbone + segmentation head.
 
     Args:
         backbone_weights: Path to DINOv3 backbone weights
         num_classes: Number of segmentation classes
+        input_size: Input image size
+        n_layers: Number of intermediate backbone layers concatenated as head input
 
     Returns:
         Tuple of (backbone, segmentation_head)
     """
-    REPO_DIR = "/home/mary/code/dinov3"
+    REPO_DIR = dinov3_repo_dir()
 
     # Load frozen backbone
     backbone = torch.hub.load(
@@ -87,9 +227,55 @@ def create_dinov3_segmentor(
 
     # Create segmentation head
     segmentation_head = SimpleSegmentationHead(
-        feature_dim=1024,  # ViT-L feature dimension
+        feature_dim=1024 * n_layers,  # ViT-L feature dimension per layer
         num_classes=num_classes,
         input_size=input_size,
     )
 
     return backbone, segmentation_head
+
+
+def build_kwp_model(config: Any) -> Tuple[nn.Module, nn.Module, Optional[nn.Module]]:
+    """Create backbone, segmentation head and optional pith head for a KwpTrainingConfig.
+
+    "dinov3": frozen/fine-tunable DINOv3 backbone with SimpleSegmentationHead and the configured pith head.
+    "unet": an image passthrough "backbone" and a segmentation_models_pytorch network that predicts
+    the class logits and (with pith_regression) one extra pith heatmap channel at full resolution.
+
+    Args:
+        config: KwpTrainingConfig.
+
+    Returns:
+        Tuple[nn.Module, nn.Module, Optional[nn.Module]]: backbone, segmentation head, pith head (or None).
+
+    Raises:
+        ValueError: For an unknown model type.
+    """
+    if config.model_type == "dinov3":
+        if config.window > 1:
+            msg = f"DINOv3 takes 3 input channels; window must be 0 or 1, got {config.window}"
+            raise ValueError(msg)
+        backbone, seg_head = create_dinov3_segmentor(
+            backbone_weights=config.backbone_weights,
+            num_classes=config.num_classes,
+            input_size=config.resolution[0],
+            n_layers=config.n_layers,
+        )
+        pith_head = None
+        if config.pith_regression:
+            pith_head = build_pith_head(config.pith_head_type, 1024 * config.n_layers, config.resolution[0])
+        return backbone, seg_head, pith_head
+    if config.model_type == "unet":
+        seg_head = UnetSegPith(
+            arch=config.unet_arch,
+            encoder=config.unet_encoder,
+            num_classes=config.num_classes,
+            pith=config.pith_regression,
+            input_size=config.resolution[0],
+            bf16=config.backbone_bf16,
+            in_channels=3 if config.window <= 1 else 2 * config.window + 1,
+        )
+        pith_head = CachedPithHead(seg_head) if config.pith_regression else None
+        return ImageBackbone(), seg_head, pith_head
+    msg = f"Unknown model type {config.model_type}"
+    raise ValueError(msg)

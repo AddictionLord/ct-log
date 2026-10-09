@@ -1,0 +1,129 @@
+# Queued 2026-10-09 (v4_unet_convnext_small_w1_dice_ts_s2). Independent rerun of the ConvNeXt-S U-Net on kwp-ds-v4, teacher split: is the v4 gain over YOLO reproducible?
+# Common recipe: kwp-ds-v3, 800 px, soft Dice (Tversky 0.5/0.5), no class weights, focal gamma 2, human 5x
+# (pith loss decoupled), EMA 0.9995, augmentation, bf16, 12 epochs, batch 6, pith as a heatmap channel.
+# teacher split: train = auto logs + human 1, 2, 4, 08; val/test = 10 (comparison with YOLO11-seg). MLflow experiment: ct-log-kwp-teachersplit.
+
+dataset_version: kwp-ds-v4
+model_type: unet
+unet_arch: Unet
+unet_encoder: tu-convnext_small
+backbone_bf16: true
+backbone_trainable_blocks: 0
+backbone_lr: 0.00003
+augment: true
+human_frame_weight: 5.0
+human_weight_applies_to_pith: false
+ema_decay: 0.9995
+
+num_classes: 3
+lr: 0.0001
+num_epochs: 12
+resolution: [800, 800]
+backbone_weights: /home/jovyan/work/ctlog-eval/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_path: /home/jovyan/work/ctlog-eval/ckpt/kwp_v4_unet_convnext_small_w1_dice_ts_s2.pth
+
+window: 1
+n_layers: 4
+pith_radius: 3
+
+pith_regression: true
+pith_loss_weight: 10.0
+pith_head_type: heatmap
+pith_loss_type: l1
+
+train_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/2
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/3
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/05
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/06
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/08
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/09
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/11
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/13
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/14
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/15
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/16
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/17
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/18
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/19
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/20
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/21
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/23
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/24
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/25
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/26
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/27
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/28
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/29
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/30
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/31
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/33
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/34
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/36
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/37
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/38
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/39
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/40
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/41
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/42
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/43
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/44
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/46
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/47
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/48
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/49
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/50
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/51
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/52
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/53
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/54
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/55
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/56
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/57
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/58
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/59
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/60
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/1
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/4
+val_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/10
+test_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/10
+train_probe_logs:
+  - /home/jovyan/work/ctlog-eval/data/kwp_ds_v4/2
+
+batch_size: 6
+num_workers: 6
+
+distribution_loss_weight: 0.4
+district_loss_weight: 0.6
+focal_alpha: 2.0
+focal_gamma: 2.0
+tversky_alpha: 0.5
+tversky_beta: 0.5
+ignore_background_in_tversky: false
+
+class_weighting: none
+class_weight_power: 1.0
+class_weight_floor_share: 0.01
+class_pixel_counts: [3226729598, 388031918, 5227266]
+
+lr_schedule: cosine
+
+log_interval: 200
+train_eval_interval: 4
+
+resume: true
+
+use_local_logger: true
+local_log_dir: /home/jovyan/work/ctlog-eval/logs/kwp_v4_unet_convnext_small_w1_dice_ts_s2
+use_mlflow: true
+mlflow_experiment_name: ct-log-kwp-teachersplit
+mlflow_run_name: kwp-v4-unet-convnext-small-w1-dice-ts-s2
+mlflow_tracking_uri: https://dagshub.com/AddictionLord/ct-log.mlflow
+
+mlflow_model_min_improvement: 0.005
+local_checkpoint_dir: /home/jovyan/work/ctlog-eval/ckpt_local/kwp_v4_unet_convnext_small_w1_dice_ts_s2
+local_checkpoint_keep: 5
+viz_interval: 5
+viz_num_frames: 4

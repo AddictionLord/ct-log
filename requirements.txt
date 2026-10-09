@@ -1,16 +1,15 @@
---extra-index-url https://download.pytorch.org/whl/cu118
-torch==2.6.0+cu118
-torchvision==0.21.0+cu118
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
 torchmetrics
 pandas
 numpy
 opencv-python
 tqdm
-mlflow
+mlflow==3.16.1
 plotly
 matplotlib
 pytest
 pillow
-mlflow
 
 # kornia
