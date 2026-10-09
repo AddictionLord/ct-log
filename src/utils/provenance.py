@@ -12,6 +12,7 @@ AUTO_LABELS = {
     "kwp-ds-v2": "YOLO11n-seg@640 knots + OBB pith (generators trained on human 1,2,4,08)",
     "kwp-ds-v3": "YOLO11n-seg@640 knots + OBB pith (generators trained on human 1,2,4,08)",
     "kwp-ds-v4": "YOLO11n-seg@800 knots + U-Net pith (generators trained on human 1,2,4,08)",
+    "kwp-ds-v5": "v4 U-Net ensemble knots (EffV2-S + ConvNeXt-S, TTA) + U-Net pith (trained on human 1,2,4,08)",
 }
 
 
@@ -52,7 +53,7 @@ def provenance_tags(config: KwpTrainingConfig) -> Dict[str, str]:
 
 def infer_dataset(train_logs: List[str]) -> str:
     joined = " ".join(train_logs)
-    for name in ("kwp_ds_v4", "kwp_ds_v3", "kwp_ds_v2"):
+    for name in ("kwp_ds_v5", "kwp_ds_v4", "kwp_ds_v3", "kwp_ds_v2"):
         if f"/{name}/" in joined:
             return name.replace("_", "-")
     if "377328_phase2" in joined or "/generated/" in joined:
