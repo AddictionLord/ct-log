@@ -803,7 +803,25 @@ v5 is 0.007 below v4 (single run, but the mechanism is visible): recall drops fr
 The ensemble's gain is variance reduction at knot edges; its hard labels only transfer its tighter
 masks, so the student undersegments (the confirmation bias expected from self-training on a
 precision-leaning teacher). Better hard labels from a stronger single generator (v3 -> v4) helped;
-labels from an average of students do not. Not pursued further. The encoder changed too, but encoders were within
+labels from an average of students do not. Not pursued further.
+
+### Chosen model: average of the v4 EffV2-S and ConvNeXt-S U-Nets, no TTA (2026-10-09)
+
+Pith against the human clicks and wood IoU on log 10 (`scripts/eval_ensemble_pith_wood.py`; ensemble pith =
+mean of the two soft-argmax points, rounded to the pixel; wood at the 800 training grid):
+
+| model | pith exact | <= 1 px | <= 2 px | mean | wood IoU |
+|---|---|---|---|---|---|
+| v4 EffV2-S | 68% | 94% | 99% | 0.38 px | 0.9856 |
+| v4 ConvNeXt-S | 62% | 94% | 98% | 0.44 px | 0.9866 |
+| **ensemble** | **67%** | **95%** | **99%** | **0.38 px** | **0.9866** |
+| reference: `unet_pith_v1` (pith in kwp-ds-v4) | 68% | 96% | – | 0.38 px | 0.983 |
+
+Pith is at the level of the current best (within one or two slices of 293); averaging does not improve it
+further. Of the 16 slices off by more than 1 px, 12 are the diagonal neighbour (1.41 px); the 4 larger
+errors (2.2-5.8 px) are slices where a knot crosses the pith, where the dark centre is not visible and the
+click is a judgement call (gallery `eval/pith_gallery_ensemble_log10.local.png`: all 16 plus 24 evenly
+spaced slices, for Rostislav's request to see a few dozen examples). Knots: 0.763 (above). The encoder changed too, but encoders were within
 +-0.005 on v3. Precision rose again (0.858), recall fell slightly: the student inherits YOLO n@800's
 tighter masks. Pith median 0.43 px (training metric).
 
