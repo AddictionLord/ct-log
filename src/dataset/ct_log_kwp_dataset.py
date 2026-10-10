@@ -175,4 +175,5 @@ class CTLogKwpDataset(torch.utils.data.Dataset):
             "pith_xy": pith_xy,
             "human": torch.tensor(human),
             "path": str(sample["center"]),
+            "ann": str(sample["ann"]),
         }

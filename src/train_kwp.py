@@ -1,5 +1,6 @@
 import argparse
 from dataclasses import asdict
+import json
 import os
 from pathlib import Path
 import time
@@ -11,6 +12,7 @@ import torchvision
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.dataset.kwp_mask import KwpMaskBuilder
+from src.eval.knot_instances import KnotInstanceEvaluator
 from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
@@ -298,6 +300,7 @@ def evaluate(
     config: KwpTrainingConfig,
     pith_head: torch.nn.Module | None = None,
     class_weights: torch.Tensor | None = None,
+    instances: bool = False,
 ) -> tuple[float, dict[str, float]]:
     """Evaluate on a dataloader, returning mean loss and per-class IoU.
 
@@ -311,6 +314,9 @@ def evaluate(
         pith_head: Optional pith coordinate regression head.
         class_weights: Optional per-class loss weights; matches training so eval loss stays
             comparable across epochs. Does not affect IoU, which is unweighted either way.
+        instances: Add knot instance metrics (src/eval/knot_instances.py) at native resolution:
+            knot = softmax >= 0.5 clipped to the predicted wood, scored by the mean knot
+            probability, against the native human mask of each slice.
 
     Returns:
         tuple[float, dict[str, float]]: mean loss and metric dict. When a pith
@@ -324,6 +330,8 @@ def evaluate(
     losses = []
     iou = PerClassIoU(num_classes=config.num_classes, class_names=KwpMaskBuilder.class_names())
     pith_errors: List[float] = []
+    instance_eval = KnotInstanceEvaluator() if instances else None
+    instance_seconds = 0.0
 
     for batch in dataloader:
         images = transform(batch["image"].to(device))
@@ -337,14 +345,38 @@ def evaluate(
 
         losses.append(compute_loss(outputs, masks, config, class_weights).item())
         iou.update(outputs.argmax(dim=1).cpu(), masks.cpu())
+        if instance_eval is not None:
+            start = time.monotonic()
+            add_instances(instance_eval, outputs, batch["ann"])
+            instance_seconds += time.monotonic() - start
 
     metrics = iou.compute()
+    if instance_eval is not None:
+        start = time.monotonic()
+        metrics.update(instance_eval.summary())
+        metrics["knot_inst_eval_sec"] = instance_seconds + time.monotonic() - start
     if pith_errors:
         errors = torch.tensor(pith_errors)
         metrics["pith_err_mean_px"] = float(errors.mean().item())
         metrics["pith_err_median_px"] = float(errors.median().item())
         metrics["pith_err_p90_px"] = float(torch.quantile(errors, 0.9).item())
     return float(torch.tensor(losses).mean().item()), metrics
+
+
+def add_instances(evaluator: KnotInstanceEvaluator, outputs: torch.Tensor, ann_paths: List[str]) -> None:
+    names = KwpMaskBuilder.class_names()
+    probs = torch.nn.functional.interpolate(
+        outputs.float().softmax(dim=1),
+        size=(NATIVE_SLICE_SIZE, NATIVE_SLICE_SIZE),
+        mode="bilinear",
+        align_corners=False,
+    )
+    knot_prob = probs[:, names.index("knot")].cpu().numpy()
+    wood = (probs.argmax(dim=1) != names.index("background")).cpu().numpy()
+    builder = KwpMaskBuilder()
+    for i, ann_path in enumerate(ann_paths):
+        gt = builder.build(json.loads(Path(ann_path).read_text())).numpy() == names.index("knot")
+        evaluator.add(gt, knot_prob[i] >= 0.5, wood=wood[i], score_map=knot_prob[i])
 
 
 @torch.no_grad()
@@ -619,7 +651,7 @@ def main() -> None:
         if ema is not None:
             ema.swap()
         val_loss, val_metrics = evaluate(
-            model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights
+            model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights, config.instance_eval
         )
         fg_iou = val_metrics["mean_iou_fg"]
 
@@ -786,7 +818,7 @@ def main() -> None:
         if best_epoch is None:
             print("No checkpoint written; testing final-epoch weights instead.")
         test_loss, test_metrics = evaluate(
-            model, seg_head, loaders["test"], transform, device, config, pith_head, class_weights
+            model, seg_head, loaders["test"], transform, device, config, pith_head, class_weights, config.instance_eval
         )
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")

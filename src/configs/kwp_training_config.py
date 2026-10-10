@@ -63,6 +63,7 @@ class KwpTrainingConfig(BaseModel):
     human_frame_weight: float = Field(1.0, gt=0)
     human_weight_applies_to_pith: bool = True
     ema_decay: Optional[float] = Field(None, gt=0, lt=1)
+    instance_eval: bool = True
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     pith_head_type: Literal["pooled_mlp", "heatmap"] = "pooled_mlp"
