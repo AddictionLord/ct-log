@@ -46,7 +46,7 @@ def main() -> None:
     for start in range(0, len(paths), args.batch_size):
         positions = list(range(start, min(start + args.batch_size, len(paths))))
         stacks = torch.stack([load_stack(paths, position, 1) for position in positions])
-        probs, piths = predict(members, stacks, device)
+        probs, piths, pith_floats = predict(members, stacks, device)
         for i, position in enumerate(positions):
             knot = probs[i, knot_id] >= 0.5
             wood = probs[i].argmax(axis=0) != background
@@ -56,6 +56,7 @@ def main() -> None:
                 knot=np.packbits(knot.ravel()),
                 wood=np.packbits(wood.ravel()),
                 pith=pith.astype(np.int32),
+                pith_float=(pith_floats[i] if pith_floats is not None else np.array([np.nan, np.nan])).astype(np.float32),
                 knot_prob=np.round(np.clip(probs[i, knot_id], 0.0, 1.0) * 255).astype(np.uint8),
             )
     meta = {
@@ -114,9 +115,11 @@ def predict(members: List[Dict], stacks: torch.Tensor, device: torch.device):
                 piths.append(member["pith_head"](features).float().cpu().numpy())
         probs_total = probs if probs_total is None else probs_total + probs
     mean_pith: Optional[np.ndarray] = None
+    pith_float: Optional[np.ndarray] = None
     if piths:
-        mean_pith = np.clip(np.rint(np.mean(piths, axis=0) * NATIVE), 0, NATIVE - 1).astype(np.int32)
-    return (probs_total / len(members)).cpu().numpy(), mean_pith
+        pith_float = np.mean(piths, axis=0) * NATIVE
+        mean_pith = np.clip(np.rint(pith_float), 0, NATIVE - 1).astype(np.int32)
+    return (probs_total / len(members)).cpu().numpy(), mean_pith, pith_float
 
 
 if __name__ == "__main__":

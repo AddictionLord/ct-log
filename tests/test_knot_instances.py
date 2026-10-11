@@ -22,6 +22,7 @@ def test_perfect_prediction(two_knots: np.ndarray) -> None:
     assert r["map50"] == 1.0
     assert r["map50_95"] == 1.0
     assert r["recall_thin_iou0.3"] == {"recall": 1.0, "n": 1}
+    assert r["pixel_iou"] == 1.0
     assert not r["ap_degenerate"]
 
 

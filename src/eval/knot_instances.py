@@ -42,6 +42,8 @@ class KnotInstanceEvaluator:
     size_hits: Dict[str, List[int]] = field(default_factory=lambda: {name: [0, 0] for name, _, _ in SIZE_BINS})
     thin_hits: List[int] = field(default_factory=lambda: [0, 0])
     has_scores: bool = True
+    pixel_inter: int = 0
+    pixel_union: int = 0
 
     def add(
         self,
@@ -59,6 +61,8 @@ class KnotInstanceEvaluator:
             score_map: [H, W] float per-pixel score (knot probability or detector confidence).
         """
         pred = pred_knot.astype(bool) & wood.astype(bool) if wood is not None else pred_knot.astype(bool)
+        self.pixel_inter += int((pred & gt_knot.astype(bool)).sum())
+        self.pixel_union += int((pred | gt_knot.astype(bool)).sum())
         gt_labels, n_gt = ndi.label(gt_knot.astype(bool), structure=S8)
         pred_labels, n_pred = ndi.label(pred, structure=S8)
         self.n_gt += n_gt
@@ -93,7 +97,12 @@ class KnotInstanceEvaluator:
             Dict[str, object]: Instance F1 blocks per IoU threshold, per-GT IoU, thin and size
                 recall, AP50 and AP50-95, and whether AP is degenerate (no scores).
         """
-        out: Dict[str, object] = {"n_frames": len(self.slices), "n_gt": self.n_gt, "n_pred": self.n_pred}
+        out: Dict[str, object] = {
+            "n_frames": len(self.slices),
+            "n_gt": self.n_gt,
+            "n_pred": self.n_pred,
+            "pixel_iou": round(self.pixel_inter / self.pixel_union, 4) if self.pixel_union else None,
+        }
         for threshold in F1_THRESHOLDS:
             best = np.array(self.hits[threshold])
             hit = best >= threshold
@@ -124,11 +133,12 @@ class KnotInstanceEvaluator:
         """Flat metrics for experiment logging.
 
         Returns:
-            Dict[str, float]: knot_map50, knot_map50_95, knot_inst_f1_30, knot_inst_f1_50,
-                knot_per_gt_iou, knot_thin_recall.
+            Dict[str, float]: knot_iou (pixel-pooled), knot_map50, knot_map50_95, knot_inst_f1_30,
+                knot_inst_f1_50, knot_per_gt_iou, knot_thin_recall.
         """
         r = self.result()
         return {
+            "knot_iou": r["pixel_iou"] or 0.0,
             "knot_map50": r["map50"],
             "knot_map50_95": r["map50_95"],
             "knot_inst_f1_30": r["iou_0.3"]["f1"],

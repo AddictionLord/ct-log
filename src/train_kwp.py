@@ -3,6 +3,7 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import random
 import time
 from typing import Dict, List, Optional
 
@@ -31,6 +32,7 @@ from src.utils.provenance import git_provenance, provenance_tags
 from src.utils.train_info import TrainInfo
 
 NATIVE_SLICE_SIZE = 778
+TRAIN_HUMAN_KEYS = ("knot_iou", "knot_map50", "knot_map50_95", "knot_inst_f1_30")
 
 
 def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int, bf16: bool = False) -> torch.Tensor:
@@ -130,6 +132,10 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
         loaders["train_eval"] = torch.utils.data.DataLoader(
             train_eval_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
+    if config.train_human_eval_frames:
+        human_loader = train_human_loader(config)
+        if human_loader is not None:
+            loaders["train_human"] = human_loader
     if config.train_probe_logs:
         probe_ds = CTLogKwpDataset(
             config.train_probe_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
@@ -138,6 +144,22 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             probe_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
     return loaders
+
+
+def train_human_loader(config: KwpTrainingConfig) -> Optional[torch.utils.data.DataLoader]:
+    dataset = CTLogKwpDataset(
+        config.train_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+    )
+    human = [i for i, flag in enumerate(dataset.human_reviewed()) if flag]
+    if not human:
+        return None
+    picked = sorted(
+        random.Random(config.train_human_eval_seed).sample(human, min(config.train_human_eval_frames, len(human)))
+    )
+    subset = torch.utils.data.Subset(dataset, picked)
+    return torch.utils.data.DataLoader(
+        subset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+    )
 
 
 def human_weighted_sampler(
@@ -658,6 +680,11 @@ def main() -> None:
         # Train IoU is only computed by the periodic train-eval below; NaN keeps the CSV columns
         # aligned and is skipped by MLflow, where zeros would read as a collapsed model.
         not_computed = {key: float("nan") for key in val_metrics}
+        if "train_human" in loaders:
+            _, human_metrics = evaluate(
+                model, seg_head, loaders["train_human"], transform, device, config, pith_head, class_weights, True
+            )
+            not_computed.update({key: human_metrics[key] for key in TRAIN_HUMAN_KEYS})
         tracker.add(epoch_idx, "train", train_loss, float("nan"), lr=optimizer.param_groups[0]["lr"], **not_computed)
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)

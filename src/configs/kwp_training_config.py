@@ -54,6 +54,8 @@ class KwpTrainingConfig(BaseModel):
     test_logs: List[str] = []
     train_eval_interval: int = 0
     train_probe_logs: List[str] = []
+    train_human_eval_frames: int = Field(150, ge=0)
+    train_human_eval_seed: int = 0
     dataset_version: Optional[str] = None
     backbone_bf16: bool = False
     backbone_trainable_blocks: int = Field(0, ge=0)
