@@ -83,3 +83,38 @@ def test_ap_pools_across_slices() -> None:
     ]
     ap = average_precision(slices, n_gt=2, threshold=0.5)
     assert ap == pytest.approx((51 * 2 / 3 + 50 * 2 / 3) / 101, abs=1e-6)
+
+
+def test_stratified_ap_separates_thin_and_thick(two_knots: np.ndarray) -> None:
+    """Missing the thin knot zeroes thin AP but leaves thick AP at 1."""
+    pred = two_knots.copy()
+    pred[30:32, 10:40] = False
+    evaluator = KnotInstanceEvaluator()
+    evaluator.add(two_knots, pred, score_map=pred.astype(float))
+    strata = evaluator.result()["ap_by_stratum"]
+    assert strata["thick"]["map50"] == 1.0
+    assert strata["thin"]["map50"] == 0.0
+    assert (strata["thin"]["n_gt"], strata["thick"]["n_gt"]) == (1, 1)
+
+
+def test_stratified_ap_ignores_other_stratum_false_positives(two_knots: np.ndarray) -> None:
+    """A high-scoring thick false positive lowers thick AP but is ignored by thin AP."""
+    pred = two_knots.copy()
+    pred[45:60, 45:60] = True
+    scores = np.where(two_knots, 0.5, 0.9)
+    evaluator = KnotInstanceEvaluator()
+    evaluator.add(two_knots, pred, score_map=scores)
+    strata = evaluator.result()["ap_by_stratum"]
+    assert strata["thin"]["map50"] == 1.0
+    assert strata["thick"]["map50"] < 1.0
+
+
+def test_stratified_ap_ignores_matches_to_other_stratum(two_knots: np.ndarray) -> None:
+    """A prediction matching only the thick GT is neither a thin TP nor a thin FP."""
+    pred = np.zeros_like(two_knots)
+    pred[5:15, 5:15] = True
+    evaluator = KnotInstanceEvaluator()
+    evaluator.add(two_knots, pred, score_map=pred.astype(float))
+    strata = evaluator.result()["ap_by_stratum"]
+    assert strata["thin"]["map50"] == 0.0
+    assert strata["thick"]["map50"] == 1.0

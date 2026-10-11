@@ -18,6 +18,8 @@ RECALL_POINTS = np.linspace(0.0, 1.0, 101)
 class _Slice:
     iou: np.ndarray
     scores: np.ndarray
+    gt_thin: Optional[np.ndarray] = None
+    pred_thin: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -88,7 +90,11 @@ class KnotInstanceEvaluator:
             scores = np.ones(n_pred)
         else:
             scores = component_scores(pred_labels, n_pred, score_map, self.score_reduce)
-        self.slices.append(_Slice(iou=iou, scores=scores))
+        gt_thin = np.array([r.axis_minor_length < THIN_MINOR_AXIS for r in measure.regionprops(gt_labels)], bool)
+        pred_thin = np.array([r.axis_minor_length < THIN_MINOR_AXIS for r in measure.regionprops(pred_labels)], bool)
+        self.slices.append(
+            _Slice(iou=iou, scores=scores, gt_thin=gt_thin.reshape(n_gt), pred_thin=pred_thin.reshape(n_pred))
+        )
 
     def result(self) -> Dict[str, object]:
         """Aggregate metrics.
@@ -126,6 +132,15 @@ class KnotInstanceEvaluator:
         aps = [average_precision(self.slices, self.n_gt, threshold) for threshold in AP_THRESHOLDS]
         out["map50"] = round(aps[0], 4)
         out["map50_95"] = round(float(np.mean(aps)), 4)
+        out["ap_by_stratum"] = {}
+        for stratum in ("thin", "thick"):
+            stratum_aps = [average_precision(self.slices, self.n_gt, threshold, stratum) for threshold in AP_THRESHOLDS]
+            n_pos = sum(int(stratum_gt(item, stratum).sum()) for item in self.slices)
+            out["ap_by_stratum"][stratum] = {
+                "map50": round(stratum_aps[0], 4),
+                "map50_95": round(float(np.mean(stratum_aps)), 4),
+                "n_gt": n_pos,
+            }
         out["ap_degenerate"] = not self.has_scores
         return out
 
@@ -167,25 +182,50 @@ def component_scores(labels: np.ndarray, n: int, score_map: np.ndarray, reduce: 
     return np.asarray(ndi.mean(score_map, labels, index), dtype=float)
 
 
-def average_precision(slices: List[_Slice], n_gt: int, threshold: float) -> float:
-    if n_gt == 0:
+def average_precision(slices: List[_Slice], n_gt: int, threshold: float, stratum: Optional[str] = None) -> float:
+    """COCO-style AP; with a stratum ("thin" or "thick"), only that stratum's GT are positives (area-range style).
+
+    A prediction matched to an out-of-stratum GT is ignored; an unmatched prediction is a false positive only
+    if its own component belongs to the stratum (minor axis < 8 px for thin), otherwise it is ignored.
+    """
+    n_pos = n_gt if stratum is None else sum(int(stratum_gt(item, stratum).sum()) for item in slices)
+    if n_pos == 0:
         return 0.0
     order: List[Tuple[float, int, int]] = [
         (-score, s, p) for s, item in enumerate(slices) for p, score in enumerate(item.scores)
     ]
     order.sort()
     taken = [np.zeros(item.iou.shape[0], bool) for item in slices]
-    tp = np.zeros(len(order))
-    for k, (_, s, p) in enumerate(order):
-        ious = np.where(taken[s], -1.0, slices[s].iou[:, p]) if slices[s].iou.shape[0] else np.zeros(0)
-        if len(ious) and ious.max() >= threshold:
-            taken[s][int(ious.argmax())] = True
-            tp[k] = 1
-    if not len(order):
+    outcomes: List[int] = []
+    for _, s, p in order:
+        item = slices[s]
+        inside = stratum_gt(item, stratum)
+        ious = np.where(taken[s], -1.0, item.iou[:, p]) if item.iou.shape[0] else np.zeros(0)
+        inside_ious = np.where(inside, ious, -1.0)
+        outside_ious = np.where(~inside, ious, -1.0)
+        if len(ious) and inside_ious.max() >= threshold:
+            taken[s][int(inside_ious.argmax())] = True
+            outcomes.append(1)
+        elif len(ious) and outside_ious.max() >= threshold:
+            taken[s][int(outside_ious.argmax())] = True
+        elif stratum is None or in_stratum(bool(item.pred_thin[p]), stratum):
+            outcomes.append(0)
+    if not outcomes:
         return 0.0
+    tp = np.array(outcomes, float)
     cum_tp = np.cumsum(tp)
-    recall = cum_tp / n_gt
-    precision = cum_tp / np.arange(1, len(order) + 1)
+    recall = cum_tp / n_pos
+    precision = cum_tp / np.arange(1, len(tp) + 1)
     envelope = np.maximum.accumulate(precision[::-1])[::-1]
     sampled = [envelope[np.searchsorted(recall, r, side="left")] if r <= recall[-1] else 0.0 for r in RECALL_POINTS]
     return float(np.mean(sampled))
+
+
+def stratum_gt(item: _Slice, stratum: Optional[str]) -> np.ndarray:
+    if stratum is None:
+        return np.ones(item.iou.shape[0], bool)
+    return item.gt_thin if stratum == "thin" else ~item.gt_thin
+
+
+def in_stratum(thin: bool, stratum: str) -> bool:
+    return thin if stratum == "thin" else not thin

@@ -120,6 +120,11 @@ def evaluate_frames(
             "thin_recall": r["recall_thin_iou0.3"]["recall"],
             "n_thin": r["recall_thin_iou0.3"]["n"],
             "n_gt_knots": r["n_gt"],
+            "thin_map50": r["ap_by_stratum"]["thin"]["map50"],
+            "thin_map50_95": r["ap_by_stratum"]["thin"]["map50_95"],
+            "thick_map50": r["ap_by_stratum"]["thick"]["map50"],
+            "thick_map50_95": r["ap_by_stratum"]["thick"]["map50_95"],
+            "n_thick": r["ap_by_stratum"]["thick"]["n_gt"],
             "pith_mean_px_rounded": round(float(np.mean(pith_errors[key])), 3) if pith_errors[key] else None,
             "n_pith": len(pith_errors[key]),
         }
