@@ -72,6 +72,7 @@ class KwpTrainingConfig(BaseModel):
     model_type: Literal["dinov3", "unet"] = "dinov3"
     unet_arch: str = "Unet"
     unet_encoder: str = "resnet50"
+    unet_decoder_channels: Optional[List[int]] = None
     pith_loss_type: Literal["mse", "l1"] = "mse"
     resume: bool = False
     log_interval: int = 50

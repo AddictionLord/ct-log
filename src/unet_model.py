@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import segmentation_models_pytorch as smp
 import torch
@@ -34,7 +34,15 @@ class UnetSegPith(nn.Module):
     """segmentation_models_pytorch network: class logits plus an optional pith heatmap channel."""
 
     def __init__(
-        self, arch: str, encoder: str, num_classes: int, pith: bool, input_size: int, bf16: bool, in_channels: int = 3
+        self,
+        arch: str,
+        encoder: str,
+        num_classes: int,
+        pith: bool,
+        input_size: int,
+        bf16: bool,
+        in_channels: int = 3,
+        decoder_channels: Optional[List[int]] = None,
     ):
         """Create the network with an ImageNet-pretrained encoder.
 
@@ -46,6 +54,7 @@ class UnetSegPith(nn.Module):
             input_size: Square input resolution (must be divisible by 32).
             bf16: Run the network under bfloat16 autocast.
             in_channels: Number of stacked input slices.
+            decoder_channels: Decoder widths per stage; None keeps the smp default.
 
         Raises:
             ValueError: If input_size is not divisible by 32.
@@ -59,12 +68,14 @@ class UnetSegPith(nn.Module):
         self.input_size = input_size
         self.bf16 = bf16
         self.in_channels = in_channels
+        extra = {"decoder_channels": list(decoder_channels)} if decoder_channels is not None else {}
         self.net = smp.create_model(
             arch,
             encoder_name=encoder,
             encoder_weights="imagenet",
             in_channels=in_channels,
             classes=num_classes + int(pith),
+            **extra,
         )
         self.pith_logits: Optional[torch.Tensor] = None
 
