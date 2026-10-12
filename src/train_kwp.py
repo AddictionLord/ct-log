@@ -685,6 +685,13 @@ def main() -> None:
                 model, seg_head, loaders["train_human"], transform, device, config, pith_head, class_weights, True
             )
             not_computed.update({key: human_metrics[key] for key in TRAIN_HUMAN_KEYS})
+        if config.save_every_epochs and (epoch_idx + 1) % config.save_every_epochs == 0:
+            periodic_dir = best_copy_dir.parent / (best_copy_dir.name + "_periodic")
+            periodic_dir.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                best_state(seg_head, pith_head, backbone_state(model, backbone_params) if finetune else None),
+                periodic_dir / f"seg_head_epoch_{epoch_idx}.pth",
+            )
         tracker.add(epoch_idx, "train", train_loss, float("nan"), lr=optimizer.param_groups[0]["lr"], **not_computed)
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)
