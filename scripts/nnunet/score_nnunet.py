@@ -48,6 +48,7 @@ def main() -> None:
             "n_frames": r["n_frames"],
             "knot_iou": r["pixel_iou"],
             "inst_f1_30": r["iou_0.3"]["f1"],
+            "mean_per_gt_iou": r["iou_0.3"]["mean_per_gt_iou"],
             "map50": r["map50"],
             "map50_95": r["map50_95"],
             "thin_recall": r["recall_thin_iou0.3"]["recall"],

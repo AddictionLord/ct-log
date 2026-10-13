@@ -78,6 +78,7 @@ def evaluate_frames(
     keys = [*names, "ensemble"] if len(names) > 1 else names
     evaluators = {k: KnotInstanceEvaluator() for k in keys}
     pith_errors: Dict[str, List[float]] = {k: [] for k in keys}
+    per_slice: Dict[str, List[Tuple[str, int, int]]] = {k: [] for k in keys}
     builder = KwpMaskBuilder()
     knot_id, background = KwpMaskBuilder.class_names().index("knot"), KwpMaskBuilder.class_names().index("background")
     by_log: Dict[Path, List[Path]] = {}
@@ -105,6 +106,14 @@ def evaluate_frames(
                 for key, (probs, pith) in zip(keys, outputs):
                     wood = probs[i].argmax(axis=0) != background
                     evaluators[key].add(gt, probs[i, knot_id] >= 0.5, wood=wood, score_map=probs[i, knot_id])
+                    knot = (probs[i, knot_id] >= 0.5) & wood
+                    per_slice[key].append(
+                        (
+                            "%s/%s" % (log_dir.name, ann.name[: -len(".json")]),
+                            int((knot & gt).sum()),
+                            int((knot | gt).sum()),
+                        )
+                    )
                     if pith is not None and click is not None:
                         x, y = np.clip(np.rint(pith[i]), 0, NATIVE - 1)
                         pith_errors[key].append(float(np.hypot(x - click[0], y - click[1])))
@@ -115,6 +124,7 @@ def evaluate_frames(
             "n_frames": r["n_frames"],
             "knot_iou": r["pixel_iou"],
             "inst_f1_30": r["iou_0.3"]["f1"],
+            "mean_per_gt_iou": r["iou_0.3"]["mean_per_gt_iou"],
             "map50": r["map50"],
             "map50_95": r["map50_95"],
             "thin_recall": r["recall_thin_iou0.3"]["recall"],
@@ -127,6 +137,7 @@ def evaluate_frames(
             "n_thick": r["ap_by_stratum"]["thick"]["n_gt"],
             "pith_mean_px_rounded": round(float(np.mean(pith_errors[key])), 3) if pith_errors[key] else None,
             "n_pith": len(pith_errors[key]),
+            "per_slice": per_slice[key],
         }
     return out
 
