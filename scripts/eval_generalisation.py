@@ -33,10 +33,14 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--threads", type=int, default=0, help="torch CPU threads (0 = default)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    device = torch.device("cuda")
+    device = torch.device(args.device)
+    if args.threads:
+        torch.set_num_threads(args.threads)
     names = [spec.split("=", 1)[0] for spec in args.member]
     members = [load_member(spec.split("=", 1)[1], device) for spec in args.member]
     results: Dict[str, dict] = {}
