@@ -29,7 +29,7 @@ class KwpTrainingConfig(BaseModel):
     distribution_loss_weight: float = Field(0.4, ge=0, le=1)
     district_loss_weight: float = Field(0.6, ge=0, le=1)
     focal_alpha: float = Field(2.0, gt=0)
-    focal_gamma: float = Field(5.0, gt=0)
+    focal_gamma: float = Field(5.0, ge=0)
     tversky_alpha: float = Field(0.3, ge=0, le=1)
     tversky_beta: float = Field(0.7, ge=0, le=1)
     ignore_background_in_tversky: bool = True
@@ -49,6 +49,9 @@ class KwpTrainingConfig(BaseModel):
     class_pixel_counts: Optional[List[int]] = None
 
     lr_schedule: Literal["none", "cosine", "multistep"] = "none"
+    optimizer: Literal["adam", "adamw"] = "adam"
+    weight_decay: float = Field(0.0, ge=0)
+    warmup_epochs: int = Field(0, ge=0)
     lr_milestones: List[int] = []
     lr_gamma: float = 0.1
     test_logs: List[str] = []

@@ -224,6 +224,35 @@ def build_class_weights(config: KwpTrainingConfig, device: torch.device) -> torc
     return weights.to(device)
 
 
+def build_optimizer(param_groups: List[dict], config: KwpTrainingConfig) -> torch.optim.Optimizer:
+    """Adam (default, no weight decay) or AdamW with decoupled decay on weights only (norms and biases excluded).
+
+    Args:
+        param_groups: Groups with "params" and "lr"; "initial_lr" is recorded for the warmup.
+        config: Training configuration (optimizer, weight_decay).
+
+    Returns:
+        torch.optim.Optimizer: The optimizer.
+    """
+    for group in param_groups:
+        group["initial_lr"] = group["lr"]
+    if config.optimizer == "adam":
+        return torch.optim.Adam(param_groups)
+    groups = []
+    for group in param_groups:
+        params = [p for p in group["params"] if p.requires_grad]
+        decay = [p for p in params if p.ndim > 1]
+        no_decay = [p for p in params if p.ndim <= 1]
+        groups.append({**group, "params": decay, "weight_decay": config.weight_decay})
+        groups.append({**group, "params": no_decay, "weight_decay": 0.0})
+    return torch.optim.AdamW([g for g in groups if g["params"]])
+
+
+def warmup_lr(optimizer: torch.optim.Optimizer, fraction: float) -> None:
+    for group in optimizer.param_groups:
+        group["lr"] = group["initial_lr"] * min(fraction, 1.0)
+
+
 def compute_loss(
     outputs: torch.Tensor,
     masks: torch.Tensor,
@@ -539,11 +568,13 @@ def main() -> None:
     class_weights = build_class_weights(config, device)
     if class_weights is not None:
         print(f"Class weights ({config.class_weighting}): {class_weights.tolist()}")
-    optimizer = torch.optim.Adam(param_groups)
+    optimizer = build_optimizer(param_groups, config)
 
     scheduler = None
     if config.lr_schedule == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config.num_epochs - config.warmup_epochs
+        )
     elif config.lr_schedule == "multistep":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=config.lr_milestones, gamma=config.lr_gamma
@@ -639,6 +670,12 @@ def main() -> None:
         losses = []
 
         for batch_idx, batch in enumerate(loaders["train"]):
+            if epoch_idx < config.warmup_epochs:
+                warmup_lr(
+                    optimizer,
+                    (epoch_idx * len(loaders["train"]) + batch_idx + 1)
+                    / (config.warmup_epochs * len(loaders["train"])),
+                )
             optimizer.zero_grad()
 
             images = transform(batch["image"].to(device))
@@ -760,7 +797,7 @@ def main() -> None:
                     logger,
                 )
 
-        if scheduler is not None:
+        if scheduler is not None and epoch_idx >= config.warmup_epochs:
             scheduler.step()
 
         # Checkpoint on the 5-epoch smoothed metric: raw fg swings ~+-0.01 between
