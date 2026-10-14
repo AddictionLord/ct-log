@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+import pickle
 import random
 import re
 import time
@@ -34,6 +35,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--dump_dir", type=Path, default=None, help="Pickle per-slice instance data (<split>.pkl) for bootstraps."
+    )
     parser.add_argument("--threads", type=int, default=0, help="torch CPU threads (0 = default)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -48,7 +52,8 @@ def main() -> None:
         name, kind, n, logs = split.split(":", 3)
         frames = select_frames([Path(p) for p in logs.split(",")], kind, int(n), args.seed)
         start = time.monotonic()
-        results[name] = evaluate_frames(frames, names, members, device, args.batch_size)
+        dump = args.dump_dir / (name + ".pkl") if args.dump_dir else None
+        results[name] = evaluate_frames(frames, names, members, device, args.batch_size, dump)
         results[name]["frame_filter"] = {
             "kind": kind,
             "n_requested": int(n),
@@ -77,7 +82,12 @@ def select_frames(log_dirs: List[Path], kind: str, n: int, seed: int) -> List[Tu
 
 
 def evaluate_frames(
-    frames: List[Tuple[Path, Path]], names: List[str], members: List[dict], device: torch.device, batch_size: int
+    frames: List[Tuple[Path, Path]],
+    names: List[str],
+    members: List[dict],
+    device: torch.device,
+    batch_size: int,
+    dump: Optional[Path] = None,
 ) -> dict:
     keys = [*names, "ensemble"] if len(names) > 1 else names
     evaluators = {k: KnotInstanceEvaluator() for k in keys}
@@ -121,6 +131,9 @@ def evaluate_frames(
                     if pith is not None and click is not None:
                         x, y = np.clip(np.rint(pith[i]), 0, NATIVE - 1)
                         pith_errors[key].append(float(np.hypot(x - click[0], y - click[1])))
+    if dump is not None:
+        dump.parent.mkdir(parents=True, exist_ok=True)
+        dump.write_bytes(pickle.dumps({k: {"per_slice": per_slice[k], "slices": evaluators[k].slices} for k in keys}))
     out = {}
     for key in keys:
         r = evaluators[key].result()

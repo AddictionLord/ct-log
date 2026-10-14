@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+import pickle
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -26,6 +27,9 @@ def main() -> None:
     )
     parser.add_argument("--logs", nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--dump_dir", type=Path, default=None, help="Pickle per-slice instance data (<log>.pkl) for bootstraps."
+    )
     args = parser.parse_args()
     builder = KwpMaskBuilder()
     knot_id = KwpMaskBuilder.class_names().index("knot")
@@ -43,6 +47,11 @@ def main() -> None:
             gt = builder.build(json.loads(ann.read_text())).numpy() == knot_id
             evaluator.add(gt, knot_prob[z] >= 0.5, wood=wood[z], score_map=knot_prob[z])
             per_slice.append((page, int((knot[z] & gt).sum()), int((knot[z] | gt).sum())))
+        if args.dump_dir:
+            args.dump_dir.mkdir(parents=True, exist_ok=True)
+            (args.dump_dir / ("%s.pkl" % log)).write_bytes(
+                pickle.dumps({"per_slice": per_slice, "slices": evaluator.slices})
+            )
         r = evaluator.result()
         out[log] = {
             "n_frames": r["n_frames"],
