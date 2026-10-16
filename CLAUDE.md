@@ -79,8 +79,10 @@ Fallbacks via flags:
   without roots is the older YOLO + OBB builder.
 
 Phase2 history: the unreviewed frames (logs 3, 05, 06, 09 and the 271 untagged frames of 08) got the M4
-ensemble on 2026-10-09 and M5 knots + pith with peel wood on 2026-10-15 (backups and details in
-`ann_pipeline/PHASES.md`); the all-classes-from-M5 default has not been uploaded yet.
+ensemble on 2026-10-09, M5 knots + pith with peel wood on 2026-10-15, and all classes from M5 (the
+current default, euler bf16 exports) on 2026-10-16 (backups and details in `ann_pipeline/PHASES.md`).
+Supervisely previews for comparison: `ct-log-v4-ensemble-preview` (384366, M4), `ct-log-v5-preview`
+(384679, M5 knots + peel wood), `ct-log-v5b-preview` (384683, all classes from M5).
 
 ## Detector: single 2-class OBB (knot + pith)
 
