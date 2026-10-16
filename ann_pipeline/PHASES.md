@@ -179,3 +179,21 @@ matches the build object for object.
 
 Backup of the previous (ensemble) pre-labels and the project meta:
 `/mnt/D/datasets/ct_log/backups/phase2_prelabels_before_m5_20261015_1855/<log>/<image>.json`.
+
+## 2026-10-16: Phase2 pre-labels replaced with M5, all classes from the model
+
+Same unreviewed frames as before: logs 3 (298), 05 (299), 06 (299), 09 (300) and the 271 untagged frames of
+08; the 27 `bumaska` frames of 08 were skipped. Before the upload every overwritten frame still matched the
+2026-10-15 upload object for object.
+
+Labels (builder defaults `--wood_source model --knot_rule argmax --pith_source model`): wood = largest filled
+component of the M5 argmax in {wood, knot}, knots = argmax == knot, pith = M5 soft-argmax rounded, no snap.
+Inputs: `scripts/export_model_outputs.py` on euler (bf16), `/mnt/D/datasets/ct_log/model_outputs_m5_euler`
+(checkpoint sha256 `228ed105…88b0`). Build: `/mnt/D/datasets/ct_log/phase2_m5_model_build`, record
+`dataset_manifests/phase2-m5-model.DATASET.json`.
+
+Change vs the 2026-10-15 labels: wood −0.51 % to +0.07 % px per log, knots +0.05 % to +0.16 %.
+Every uploaded frame was re-downloaded and matches the build object for object.
+
+Backup of the previous pre-labels and the project meta:
+`/mnt/D/datasets/ct_log/backups/phase2_20261016/<log>/<image>.json`.

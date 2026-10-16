@@ -1,0 +1,23 @@
+{
+  "name": "M5",
+  "config": "src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512.yaml",
+  "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth",
+  "checkpoint_sha256": "228ed1059172e2e7eaaa6c996b45d9a25b03d9060c435bb1587be52127c688b0",
+  "tta": "none",
+  "input": "3-slice stack [z-1, z, z+1] clamped at the ends, native 778 -> model resolution bilinear, ImageNet normalisation",
+  "outputs": {
+    "<log>/page_XXX.cls.png": "uint8 argmax of the 3-class softmax at native 778 (0 background, 1 wood, 2 knot)",
+    "<log>/page_XXX.png": "uint8 = round(p_knot * 255) at native 778 (same format as export_ensemble_probs)",
+    "<log>.json": "pith point per slice: rint(soft-argmax * 778) clipped to [0, 777], no snap (same format as export_pith)"
+  },
+  "resize": "softmax interpolated bilinear to native 778 before argmax",
+  "slices_per_log": {
+    "3": 298,
+    "05": 299,
+    "06": 299,
+    "08": 299,
+    "09": 300,
+    "50": 300,
+    "52": 299
+  }
+}

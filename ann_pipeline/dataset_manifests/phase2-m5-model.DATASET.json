@@ -1,0 +1,108 @@
+{
+ "version": "phase2-m5-model",
+ "created": "2026-10-16T11:35:24",
+ "git_commit": "337ad9ca7d701cf659a9d04e9168f9878f367124",
+ "git_dirty": false,
+ "generator": {
+  "wood_source": "model",
+  "knot_rule": "argmax",
+  "pith_source": "model",
+  "model": {
+   "root": "/mnt/D/datasets/ct_log/model_outputs_m5_euler",
+   "name": "M5",
+   "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth",
+   "checkpoint_sha256": "228ed1059172e2e7eaaa6c996b45d9a25b03d9060c435bb1587be52127c688b0"
+  },
+  "knot": {
+   "source": "model argmax == knot from /mnt/D/datasets/ct_log/model_outputs_m5_euler",
+   "description": "M5 all classes from model (export_model_outputs.py on euler, bf16)",
+   "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
+   "per_log_inputs_sha256": "see logs.<log>.class_map_inputs_sha256"
+  },
+  "pith": {
+   "source": "external per-slice pith points from /mnt/D/datasets/ct_log/model_outputs_m5_euler",
+   "meta": {
+    "name": "M5",
+    "config": "src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512.yaml",
+    "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth",
+    "checkpoint_sha256": "228ed1059172e2e7eaaa6c996b45d9a25b03d9060c435bb1587be52127c688b0",
+    "tta": "none",
+    "input": "3-slice stack [z-1, z, z+1] clamped at the ends, native 778 -> model resolution bilinear, ImageNet normalisation",
+    "outputs": {
+     "<log>/page_XXX.cls.png": "uint8 argmax of the 3-class softmax at native 778 (0 background, 1 wood, 2 knot)",
+     "<log>/page_XXX.png": "uint8 = round(p_knot * 255) at native 778 (same format as export_ensemble_probs)",
+     "<log>.json": "pith point per slice: rint(soft-argmax * 778) clipped to [0, 777], no snap (same format as export_pith)"
+    },
+    "resize": "softmax interpolated bilinear to native 778 before argmax",
+    "slices_per_log": {
+     "3": 298,
+     "05": 299,
+     "06": 299,
+     "08": 299,
+     "09": 300,
+     "50": 300,
+     "52": 299
+    }
+   }
+  },
+  "wood": "largest_cc_fill(model argmax in {wood, knot})",
+  "human_root": "/mnt/D/datasets/ct_log/human_reviewed_20260929"
+ },
+ "logs": {
+  "3": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 191,
+   "knot_px": 867178,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/3/img",
+   "class_map_inputs_sha256": "d9bed7df1d4875c85971b7bd6a6c2c78d4c2b9367924622197ea4b0d14bf6d50"
+  },
+  "05": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 173,
+   "knot_px": 372521,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/05/img",
+   "class_map_inputs_sha256": "9d0947b9a591d5afb99e70331dc2779005237a19765aebbc23aeaf41af6cadf0"
+  },
+  "06": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 174,
+   "knot_px": 241034,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/06/img",
+   "class_map_inputs_sha256": "6779ce55555c65b8e0fb117b8bbc7da2aee147b1e128d17bd6454ca6ddb6e8cd"
+  },
+  "08": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 27,
+   "frames_with_knot": 178,
+   "knot_px": 342728,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/08/img",
+   "class_map_inputs_sha256": "f459ddeacd0ba77e0404e1ab9fc901149ddf63f3a33c7b1edf1748f7d7ce1170"
+  },
+  "09": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 142,
+   "knot_px": 156250,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/09/img",
+   "class_map_inputs_sha256": "bcb4b22f5bcd6b5644d064d64bfb71f5a9be4d47ba36ae5e48d32bd5e93decd0"
+  },
+  "10": {
+   "kind": "human",
+   "frames": 293,
+   "img_pages": 299,
+   "frames_with_knot": 177,
+   "knot_px": 233198,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/10/img"
+  }
+ },
+ "manifest": "MANIFEST.sha256 (1788 annotation files)",
+ "manifest_sha256": "10c6a1795aa616e964c781e21b2d1dd8a1573d36a938a234c5465b8731f0b006"
+}
