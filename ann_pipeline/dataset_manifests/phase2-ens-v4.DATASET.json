@@ -1,0 +1,108 @@
+{
+ "version": "phase2-ens-v4",
+ "created": "2026-10-09T18:11:06",
+ "git_commit": "b3cbb410613a434ebaece749fe0b1180598400e3",
+ "git_dirty": true,
+ "generator": {
+  "knot": {
+   "source": "external per-slice knot probabilities from /mnt/D/datasets/ct_log/knot_probs_ens_v4",
+   "description": "documented default: mean of v4 U-Nets EffV2-S + ConvNeXt-S (teacher split), no TTA, p>=0.5; ensemble pith (mean of soft-argmax points)",
+   "threshold": "p >= 128/255",
+   "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
+   "per_log_inputs_sha256": "see logs.<log>.knot_inputs_sha256 (sha256 of sorted per-file sha256 lines)"
+  },
+  "pith": {
+   "source": "external per-slice pith points from /mnt/D/datasets/ct_log/unet_pith_ens_v4",
+   "meta": {
+    "members": [
+     {
+      "name": "effv2s",
+      "config": "src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts.yaml",
+      "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts/kwp-v4-unet-effv2s-w1-dice-ts/seg_head_epoch_11.pth",
+      "checkpoint_sha256": "0a7f6dee4cd4070cd1e270aec164d0e4b615b6c2f35cba1499386809c648ff81"
+     },
+     {
+      "name": "convnext_s",
+      "config": "src/configs/train_kwp_v4_unet_convnext_small_w1_dice_ts.yaml",
+      "checkpoint": "ckpt_local/kwp_v4_unet_convnext_small_w1_dice_ts/kwp-v4-unet-convnext-small-w1-dice-ts/seg_head_epoch_11.pth",
+      "checkpoint_sha256": "0a99076ce66dfed39bf7c293abd43744fec0a6d1748c4b284aaa60719d8e4624"
+     }
+    ],
+    "input_stack": "[z-1 .. z+1] slices from <log>/img sorted by page index, clamped at the ends",
+    "resize": "native 778x778 -> 800x800 bilinear, ImageNet normalisation",
+    "prediction": "per member: soft-argmax of the pith heatmap channel, normalized (x, y); ensemble: arithmetic mean of the members' points in native pixels (x * 778), as in scripts/eval_ensemble_pith_wood.py",
+    "rounding": "rint of the mean point, clipped to [0, 777]; integer pixel index (Supervisely convention: column x, row y)",
+    "tta": "none",
+    "null_pages": "none: the models always predict a point",
+    "snap": "none",
+    "slices_per_log": {
+     "3": 298,
+     "05": 299,
+     "06": 299,
+     "08": 299,
+     "09": 300,
+     "10": 299
+    }
+   }
+  },
+  "wood": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+  "human_root": "/mnt/D/datasets/ct_log/human_reviewed_20260929"
+ },
+ "logs": {
+  "3": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 177,
+   "knot_px": 819505,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/3/img",
+   "knot_inputs_sha256": "d50aeaa086b843d67306cd8df5024c9dfaabb04da42908c6cd30c5adb7a8faea"
+  },
+  "05": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 168,
+   "knot_px": 375763,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/05/img",
+   "knot_inputs_sha256": "bcb5cafd7fb4e883c134fcb34b4b03c1d204864dd089ce30d62211c8eaa65d07"
+  },
+  "06": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 166,
+   "knot_px": 231893,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/06/img",
+   "knot_inputs_sha256": "ee441fee267e38ee014c0afeebbe704da708e8f66cff0d18a0c6321cfeccfe34"
+  },
+  "08": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 27,
+   "frames_with_knot": 174,
+   "knot_px": 340365,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/08/img",
+   "knot_inputs_sha256": "ee34cc9a10a5b6701e69c2d6a29bd084d99722d83871ce06bd51e0ad963faad6"
+  },
+  "09": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 138,
+   "knot_px": 152224,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/09/img",
+   "knot_inputs_sha256": "5568718fbe6a1818097128e7e124b39ce6b341281379454444bd8f8231878a14"
+  },
+  "10": {
+   "kind": "human",
+   "frames": 293,
+   "img_pages": 299,
+   "frames_with_knot": 177,
+   "knot_px": 233198,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/10/img"
+  }
+ },
+ "manifest": "MANIFEST.sha256 (1788 annotation files)",
+ "manifest_sha256": "0c11eb806c6614f5eebeca9d87f3d9fb31d81e892f79667e6c7c0ca3d40b9d11"
+}

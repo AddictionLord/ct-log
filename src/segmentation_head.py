@@ -274,6 +274,7 @@ def build_kwp_model(config: Any) -> Tuple[nn.Module, nn.Module, Optional[nn.Modu
             input_size=config.resolution[0],
             bf16=config.backbone_bf16,
             in_channels=3 if config.window <= 1 else 2 * config.window + 1,
+            decoder_channels=config.unet_decoder_channels,
         )
         pith_head = CachedPithHead(seg_head) if config.pith_regression else None
         return ImageBackbone(), seg_head, pith_head

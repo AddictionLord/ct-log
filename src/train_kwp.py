@@ -1,7 +1,9 @@
 import argparse
 from dataclasses import asdict
+import json
 import os
 from pathlib import Path
+import random
 import time
 from typing import Dict, List, Optional
 
@@ -11,6 +13,7 @@ import torchvision
 from src.configs.kwp_training_config import KwpTrainingConfig
 from src.dataset.ct_log_kwp_dataset import CTLogKwpDataset
 from src.dataset.kwp_mask import KwpMaskBuilder
+from src.eval.knot_instances import KnotInstanceEvaluator
 from src.loggers import CombinedLogger, ILogger, LocalLogger, MlflowLogger
 from src.loss.functional.focal_loss import multiclass_focal_loss
 from src.loss.functional.tversky_loss import multiclass_tversky_loss
@@ -29,6 +32,7 @@ from src.utils.provenance import git_provenance, provenance_tags
 from src.utils.train_info import TrainInfo
 
 NATIVE_SLICE_SIZE = 778
+TRAIN_HUMAN_KEYS = ("knot_iou", "knot_map50", "knot_map50_95", "knot_inst_f1_30")
 
 
 def extract_features(model: torch.nn.Module, images: torch.Tensor, n_layers: int, bf16: bool = False) -> torch.Tensor:
@@ -128,6 +132,10 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
         loaders["train_eval"] = torch.utils.data.DataLoader(
             train_eval_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
+    if config.train_human_eval_frames:
+        human_loader = train_human_loader(config)
+        if human_loader is not None:
+            loaders["train_human"] = human_loader
     if config.train_probe_logs:
         probe_ds = CTLogKwpDataset(
             config.train_probe_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
@@ -136,6 +144,22 @@ def build_dataloaders(config: KwpTrainingConfig) -> dict[str, torch.utils.data.D
             probe_ds, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
         )
     return loaders
+
+
+def train_human_loader(config: KwpTrainingConfig) -> Optional[torch.utils.data.DataLoader]:
+    dataset = CTLogKwpDataset(
+        config.train_logs, resolution=config.resolution, window=config.window, pith_radius=config.pith_radius
+    )
+    human = [i for i, flag in enumerate(dataset.human_reviewed()) if flag]
+    if not human:
+        return None
+    picked = sorted(
+        random.Random(config.train_human_eval_seed).sample(human, min(config.train_human_eval_frames, len(human)))
+    )
+    subset = torch.utils.data.Subset(dataset, picked)
+    return torch.utils.data.DataLoader(
+        subset, batch_size=config.batch_size, shuffle=False, num_workers=config.num_workers
+    )
 
 
 def human_weighted_sampler(
@@ -198,6 +222,35 @@ def build_class_weights(config: KwpTrainingConfig, device: torch.device) -> torc
     else:
         weights = inverse_frequency_weights(config.class_pixel_counts, power=config.class_weight_power)
     return weights.to(device)
+
+
+def build_optimizer(param_groups: List[dict], config: KwpTrainingConfig) -> torch.optim.Optimizer:
+    """Adam (default, no weight decay) or AdamW with decoupled decay on weights only (norms and biases excluded).
+
+    Args:
+        param_groups: Groups with "params" and "lr"; "initial_lr" is recorded for the warmup.
+        config: Training configuration (optimizer, weight_decay).
+
+    Returns:
+        torch.optim.Optimizer: The optimizer.
+    """
+    for group in param_groups:
+        group["initial_lr"] = group["lr"]
+    if config.optimizer == "adam":
+        return torch.optim.Adam(param_groups)
+    groups = []
+    for group in param_groups:
+        params = [p for p in group["params"] if p.requires_grad]
+        decay = [p for p in params if p.ndim > 1]
+        no_decay = [p for p in params if p.ndim <= 1]
+        groups.append({**group, "params": decay, "weight_decay": config.weight_decay})
+        groups.append({**group, "params": no_decay, "weight_decay": 0.0})
+    return torch.optim.AdamW([g for g in groups if g["params"]])
+
+
+def warmup_lr(optimizer: torch.optim.Optimizer, fraction: float) -> None:
+    for group in optimizer.param_groups:
+        group["lr"] = group["initial_lr"] * min(fraction, 1.0)
 
 
 def compute_loss(
@@ -298,6 +351,7 @@ def evaluate(
     config: KwpTrainingConfig,
     pith_head: torch.nn.Module | None = None,
     class_weights: torch.Tensor | None = None,
+    instances: bool = False,
 ) -> tuple[float, dict[str, float]]:
     """Evaluate on a dataloader, returning mean loss and per-class IoU.
 
@@ -311,6 +365,9 @@ def evaluate(
         pith_head: Optional pith coordinate regression head.
         class_weights: Optional per-class loss weights; matches training so eval loss stays
             comparable across epochs. Does not affect IoU, which is unweighted either way.
+        instances: Add knot instance metrics (src/eval/knot_instances.py) at native resolution:
+            knot = softmax >= 0.5 clipped to the predicted wood, scored by the mean knot
+            probability, against the native human mask of each slice.
 
     Returns:
         tuple[float, dict[str, float]]: mean loss and metric dict. When a pith
@@ -324,6 +381,8 @@ def evaluate(
     losses = []
     iou = PerClassIoU(num_classes=config.num_classes, class_names=KwpMaskBuilder.class_names())
     pith_errors: List[float] = []
+    instance_eval = KnotInstanceEvaluator() if instances else None
+    instance_seconds = 0.0
 
     for batch in dataloader:
         images = transform(batch["image"].to(device))
@@ -337,14 +396,38 @@ def evaluate(
 
         losses.append(compute_loss(outputs, masks, config, class_weights).item())
         iou.update(outputs.argmax(dim=1).cpu(), masks.cpu())
+        if instance_eval is not None:
+            start = time.monotonic()
+            add_instances(instance_eval, outputs, batch["ann"])
+            instance_seconds += time.monotonic() - start
 
     metrics = iou.compute()
+    if instance_eval is not None:
+        start = time.monotonic()
+        metrics.update(instance_eval.summary())
+        metrics["knot_inst_eval_sec"] = instance_seconds + time.monotonic() - start
     if pith_errors:
         errors = torch.tensor(pith_errors)
         metrics["pith_err_mean_px"] = float(errors.mean().item())
         metrics["pith_err_median_px"] = float(errors.median().item())
         metrics["pith_err_p90_px"] = float(torch.quantile(errors, 0.9).item())
     return float(torch.tensor(losses).mean().item()), metrics
+
+
+def add_instances(evaluator: KnotInstanceEvaluator, outputs: torch.Tensor, ann_paths: List[str]) -> None:
+    names = KwpMaskBuilder.class_names()
+    probs = torch.nn.functional.interpolate(
+        outputs.float().softmax(dim=1),
+        size=(NATIVE_SLICE_SIZE, NATIVE_SLICE_SIZE),
+        mode="bilinear",
+        align_corners=False,
+    )
+    knot_prob = probs[:, names.index("knot")].cpu().numpy()
+    wood = (probs.argmax(dim=1) != names.index("background")).cpu().numpy()
+    builder = KwpMaskBuilder()
+    for i, ann_path in enumerate(ann_paths):
+        gt = builder.build(json.loads(Path(ann_path).read_text())).numpy() == names.index("knot")
+        evaluator.add(gt, knot_prob[i] >= 0.5, wood=wood[i], score_map=knot_prob[i])
 
 
 @torch.no_grad()
@@ -485,11 +568,13 @@ def main() -> None:
     class_weights = build_class_weights(config, device)
     if class_weights is not None:
         print(f"Class weights ({config.class_weighting}): {class_weights.tolist()}")
-    optimizer = torch.optim.Adam(param_groups)
+    optimizer = build_optimizer(param_groups, config)
 
     scheduler = None
     if config.lr_schedule == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config.num_epochs - config.warmup_epochs
+        )
     elif config.lr_schedule == "multistep":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=config.lr_milestones, gamma=config.lr_gamma
@@ -585,6 +670,12 @@ def main() -> None:
         losses = []
 
         for batch_idx, batch in enumerate(loaders["train"]):
+            if epoch_idx < config.warmup_epochs:
+                warmup_lr(
+                    optimizer,
+                    (epoch_idx * len(loaders["train"]) + batch_idx + 1)
+                    / (config.warmup_epochs * len(loaders["train"])),
+                )
             optimizer.zero_grad()
 
             images = transform(batch["image"].to(device))
@@ -619,13 +710,25 @@ def main() -> None:
         if ema is not None:
             ema.swap()
         val_loss, val_metrics = evaluate(
-            model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights
+            model, seg_head, loaders["val"], transform, device, config, pith_head, class_weights, config.instance_eval
         )
         fg_iou = val_metrics["mean_iou_fg"]
 
         # Train IoU is only computed by the periodic train-eval below; NaN keeps the CSV columns
         # aligned and is skipped by MLflow, where zeros would read as a collapsed model.
         not_computed = {key: float("nan") for key in val_metrics}
+        if "train_human" in loaders:
+            _, human_metrics = evaluate(
+                model, seg_head, loaders["train_human"], transform, device, config, pith_head, class_weights, True
+            )
+            not_computed.update({key: human_metrics[key] for key in TRAIN_HUMAN_KEYS})
+        if config.save_every_epochs and (epoch_idx + 1) % config.save_every_epochs == 0:
+            periodic_dir = best_copy_dir.parent / (best_copy_dir.name + "_periodic")
+            periodic_dir.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                best_state(seg_head, pith_head, backbone_state(model, backbone_params) if finetune else None),
+                periodic_dir / f"seg_head_epoch_{epoch_idx}.pth",
+            )
         tracker.add(epoch_idx, "train", train_loss, float("nan"), lr=optimizer.param_groups[0]["lr"], **not_computed)
         logger.log_metrics(tracker.get(epoch_idx, "train")[-1])
         tracker.add(epoch_idx, "val", val_loss, fg_iou, **val_metrics)
@@ -694,7 +797,7 @@ def main() -> None:
                     logger,
                 )
 
-        if scheduler is not None:
+        if scheduler is not None and epoch_idx >= config.warmup_epochs:
             scheduler.step()
 
         # Checkpoint on the 5-epoch smoothed metric: raw fg swings ~+-0.01 between
@@ -786,7 +889,7 @@ def main() -> None:
         if best_epoch is None:
             print("No checkpoint written; testing final-epoch weights instead.")
         test_loss, test_metrics = evaluate(
-            model, seg_head, loaders["test"], transform, device, config, pith_head, class_weights
+            model, seg_head, loaders["test"], transform, device, config, pith_head, class_weights, config.instance_eval
         )
         test_str = " ".join(f"{k}={v:.3f}" for k, v in test_metrics.items())
         print(f"TEST loss {test_loss:.4f} {test_str}")

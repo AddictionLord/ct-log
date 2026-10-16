@@ -1,0 +1,21 @@
+{
+  "members": [
+    {
+      "config": "src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512.yaml",
+      "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth",
+      "sha256": "228ed1059172e2e7eaaa6c996b45d9a25b03d9060c435bb1587be52127c688b0"
+    }
+  ],
+  "averaging": "arithmetic mean of the members' knot softmax probabilities",
+  "tta": "none",
+  "input": "3-slice stack [z-1, z, z+1] clamped at the ends, native 778 -> model resolution bilinear, ImageNet normalisation",
+  "output": "native 778x778 bilinear, uint8 = round(p * 255); knot mask = png >= 128",
+  "logs": [
+    "3",
+    "05",
+    "06",
+    "08",
+    "09",
+    "10"
+  ]
+}

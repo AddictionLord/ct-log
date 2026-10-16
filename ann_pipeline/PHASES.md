@@ -127,3 +127,55 @@ conda run -n ct-log python -m ann_pipeline.scripts.setup_phases \
 conda run -n ct-log python -m ann_pipeline.scripts.setup_phases \
     --subset 4 --out_dir /tmp/phases --upload
 ```
+
+## 2026-10-09: Phase2 pre-labels replaced with the U-Net ensemble default
+
+Unreviewed frames in Phase2 (377328) were overwritten:
+- logs 3 (298 frames), 05 (299), 06 (299) and 09 (300), none of which had `bumaska` frames or edits since 2026-07-13;
+- 271 untagged frames of 08.
+
+The 27 `bumaska` frames of 08 were skipped and verified unchanged.
+
+Labels:
+- **Knots:** mean of the v4 U-Nets EffV2-S + ConvNeXt-S (no TTA), p >= 0.5, clipped to wood.
+- **Pith:** ensemble pith (mean of the two soft-argmax points, rounded, no snap).
+- **Wood:** `threshold_peel`.
+
+Built with `build_kwp_dataset.py --knot_root /mnt/D/datasets/ct_log/knot_probs_ens_v4
+--pith_root /mnt/D/datasets/ct_log/unet_pith_ens_v4`.
+- Export tar sha256: knots `4f7d894f…a583`, pith `960ffeb6…6068`.
+- Build record: `dataset_manifests/phase2-ens-v4.DATASET.json` (manifest sha256 `0c11eb80…9d11`).
+- Log-10 check of the exports: knot IoU 0.763; pith 66 % exact / 95 % within 1 px / 99 % within 2 px,
+  mean 0.39 px.
+
+Upload: `logs/phase2_deploy_20261009/upload_prelabels.py` (skips `bumaska`). Every uploaded frame was
+re-downloaded and matches the local build object for object.
+
+Backup of the previous pre-labels (propagation pipeline, detector v3) and the project meta:
+`/mnt/D/datasets/ct_log/backups/phase2_prelabels_before_ensemble_20261009_1803/<log>/<image>.json`.
+
+## 2026-10-15: Phase2 pre-labels replaced with M5
+
+Same unreviewed frames as on 2026-10-09 were overwritten: logs 3 (298), 05 (299), 06 (299), 09 (300) and the
+271 untagged frames of 08. The 27 `bumaska` frames of 08 were skipped. Before the upload, every overwritten
+frame still matched the 2026-10-09 ensemble build object for object (no untagged human edits were lost).
+
+Labels:
+- **Knots:** M5 = E1, the single EffV2-S U-Net with a 512-256-128-64-32 decoder, 48 epochs, EMA
+  (`seg_head_epoch_47.pth`, sha256 `228ed105…88b0`), no TTA, p >= 0.5, clipped to wood.
+- **Pith:** M5 soft-argmax point, rounded, no snap.
+- **Wood:** `threshold_peel`.
+
+On log 10, M5 is level with the M4 ensemble in pixel knot IoU (0.763 vs 0.763, +0.001 [−0.007, +0.009])
+and better on instances: mean per-GT IoU +0.025 [+0.015, +0.038], mAP50 +0.034, thin recall +0.128
+(`report_2026-10/bootstrap_instance_e1.json`). Pith: 66.9 % exact, 94.9 % within 1 px, mean 0.38 px.
+
+Built with `build_kwp_dataset.py --version phase2-m5 --knot_root /mnt/D/datasets/ct_log/knot_probs_m5
+--pith_root /mnt/D/datasets/ct_log/unet_pith_m5` into `/mnt/D/datasets/ct_log/phase2_m5_build`.
+Build record: `dataset_manifests/phase2-m5.DATASET.json` (manifest sha256 `45115544…f218`).
+
+Upload: `logs/phase2_deploy_20261009/upload_prelabels.py`. Every uploaded frame was re-downloaded and
+matches the build object for object.
+
+Backup of the previous (ensemble) pre-labels and the project meta:
+`/mnt/D/datasets/ct_log/backups/phase2_prelabels_before_m5_20261015_1855/<log>/<image>.json`.

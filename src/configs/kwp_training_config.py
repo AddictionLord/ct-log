@@ -29,7 +29,7 @@ class KwpTrainingConfig(BaseModel):
     distribution_loss_weight: float = Field(0.4, ge=0, le=1)
     district_loss_weight: float = Field(0.6, ge=0, le=1)
     focal_alpha: float = Field(2.0, gt=0)
-    focal_gamma: float = Field(5.0, gt=0)
+    focal_gamma: float = Field(5.0, ge=0)
     tversky_alpha: float = Field(0.3, ge=0, le=1)
     tversky_beta: float = Field(0.7, ge=0, le=1)
     ignore_background_in_tversky: bool = True
@@ -49,11 +49,16 @@ class KwpTrainingConfig(BaseModel):
     class_pixel_counts: Optional[List[int]] = None
 
     lr_schedule: Literal["none", "cosine", "multistep"] = "none"
+    optimizer: Literal["adam", "adamw"] = "adam"
+    weight_decay: float = Field(0.0, ge=0)
+    warmup_epochs: int = Field(0, ge=0)
     lr_milestones: List[int] = []
     lr_gamma: float = 0.1
     test_logs: List[str] = []
     train_eval_interval: int = 0
     train_probe_logs: List[str] = []
+    train_human_eval_frames: int = Field(150, ge=0)
+    train_human_eval_seed: int = 0
     dataset_version: Optional[str] = None
     backbone_bf16: bool = False
     backbone_trainable_blocks: int = Field(0, ge=0)
@@ -63,18 +68,21 @@ class KwpTrainingConfig(BaseModel):
     human_frame_weight: float = Field(1.0, gt=0)
     human_weight_applies_to_pith: bool = True
     ema_decay: Optional[float] = Field(None, gt=0, lt=1)
+    instance_eval: bool = True
     pith_regression: bool = False
     pith_loss_weight: float = 1.0
     pith_head_type: Literal["pooled_mlp", "heatmap"] = "pooled_mlp"
     model_type: Literal["dinov3", "unet"] = "dinov3"
     unet_arch: str = "Unet"
     unet_encoder: str = "resnet50"
+    unet_decoder_channels: Optional[List[int]] = None
     pith_loss_type: Literal["mse", "l1"] = "mse"
     resume: bool = False
     log_interval: int = 50
     checkpoint_path: Path = Path("/mnt/D/models/ct-log/kwp_seg_head.pth")
     local_checkpoint_dir: Path = Path("/tmp/ctlog-checkpoints")
     local_checkpoint_keep: int = Field(5, ge=1)
+    save_every_epochs: int = Field(0, ge=0)
     mlflow_model_min_improvement: float = Field(0.005, ge=0)
     viz_interval: int = Field(5, ge=0)
     viz_num_frames: int = Field(4, ge=1)
