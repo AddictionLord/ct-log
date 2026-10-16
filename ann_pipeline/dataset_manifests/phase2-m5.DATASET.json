@@ -1,0 +1,99 @@
+{
+ "version": "phase2-m5",
+ "created": "2026-10-15T18:55:22",
+ "git_commit": "f1c02d319daa228b1aae1f57f77941fb9ca44588",
+ "git_dirty": true,
+ "generator": {
+  "knot": {
+   "source": "external per-slice knot probabilities from /mnt/D/datasets/ct_log/knot_probs_m5",
+   "description": "M5 = E1 EffV2-S dec512 48ep EMA (seg_head_epoch_47.pth sha256 228ed105...), single model, no TTA, p>=0.5; M5 pith soft-argmax rounded, no snap",
+   "threshold": "p >= 128/255",
+   "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
+   "per_log_inputs_sha256": "see logs.<log>.knot_inputs_sha256 (sha256 of sorted per-file sha256 lines)"
+  },
+  "pith": {
+   "source": "external per-slice pith points from /mnt/D/datasets/ct_log/unet_pith_m5",
+   "meta": {
+    "model": "kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512",
+    "config": "src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512.yaml",
+    "checkpoint": "ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth",
+    "checkpoint_sha256": "228ed1059172e2e7eaaa6c996b45d9a25b03d9060c435bb1587be52127c688b0",
+    "epoch": "47 (0-based index = epoch 48 of 48)",
+    "weights": "EMA weights, periodic checkpoint saved at the end of epoch 48 (save_every_epochs 4); this is M5 = E1 ep48 EMA",
+    "input_stack": "[z-1 .. z+1] slices from <log>/img sorted by page index, clamped at the ends",
+    "resize": "native 778x778 -> 800x800 bilinear, ImageNet normalisation",
+    "prediction": "soft-argmax of the pith heatmap channel, normalized (x, y) in [0, 1] with pixel centres at (i + 0.5) / W",
+    "rounding": "x_px = rint(x * 778), y_px = rint(y * 778), clipped to [0, 777]; integer pixel index (Supervisely convention: column x, row y). Same rule as the log-10 evaluation of M5 (67-68% exact, 95% <= 1 px, mean 0.37-0.38 px).",
+    "null_pages": "none: the model always predicts a point; it does not detect absence of pith",
+    "snap": "none",
+    "slices_per_log": {
+     "3": 298,
+     "05": 299,
+     "06": 299,
+     "08": 299,
+     "09": 300,
+     "10": 299
+    }
+   }
+  },
+  "wood": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+  "human_root": "/mnt/D/datasets/ct_log/human_reviewed_20260929"
+ },
+ "logs": {
+  "3": {
+   "kind": "auto",
+   "frames": 298,
+   "human_frames": 0,
+   "frames_with_knot": 191,
+   "knot_px": 865796,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/3/img",
+   "knot_inputs_sha256": "1b76564dac9e7d5a52207d6e8e059ace924a826af223abb086687ff6e893485d"
+  },
+  "05": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 173,
+   "knot_px": 372177,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/05/img",
+   "knot_inputs_sha256": "729ef2fb4867bbbcb37f36ab4e72e50a020a3033689fa2413593ded80be1bb8c"
+  },
+  "06": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 0,
+   "frames_with_knot": 174,
+   "knot_px": 240841,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/06/img",
+   "knot_inputs_sha256": "cf40ded6b0682923ad6de68da3e313513054121be37330ce3c1046ac468a01ce"
+  },
+  "08": {
+   "kind": "auto",
+   "frames": 299,
+   "human_frames": 27,
+   "frames_with_knot": 178,
+   "knot_px": 342377,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/08/img",
+   "knot_inputs_sha256": "8e9ad7a24144b7a14fc9b5af62cdc1a4e6002637e3b94638cb18500daf25cfdf"
+  },
+  "09": {
+   "kind": "auto",
+   "frames": 300,
+   "human_frames": 0,
+   "frames_with_knot": 142,
+   "knot_px": 156172,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/09/img",
+   "knot_inputs_sha256": "b4c1da362c9c8b33280149b02bed7e54fd9897ddaf707bc240c486dfb07abb04"
+  },
+  "10": {
+   "kind": "human",
+   "frames": 293,
+   "img_pages": 299,
+   "frames_with_knot": 177,
+   "knot_px": 233198,
+   "img_source": "/mnt/D/datasets/ct_log/375492_SM_2025/10/img"
+  }
+ },
+ "manifest": "MANIFEST.sha256 (1788 annotation files)",
+ "manifest_sha256": "45115544fbe9754409bda399278835c8f60f60eb21201e0ac5788eb0a2b6f218"
+}

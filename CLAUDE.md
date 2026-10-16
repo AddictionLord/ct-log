@@ -61,9 +61,8 @@ Evidence is in `SEGMENTATION.md`:
 Producing the inputs for `build_kwp_dataset.py`:
 - **Knots:** `scripts/export_ensemble_probs.py --member <cfg>=<ckpt> --member <cfg>=<ckpt>` (no
   `--tta`) writes per-slice probability PNGs, which go to `--knot_root`.
-- **Pith:** per-log JSON via `--pith_root`. `scripts/export_pith.py` exports a single model. An
-  ensemble pith export (mean of the two points, as in `scripts/eval_ensemble_pith_wood.py`) still
-  has to be added before deployment.
+- **Pith:** per-log JSON via `--pith_root`. `scripts/export_ensemble_pith.py --member name=<cfg>=<ckpt>`
+  exports the ensemble (mean of the two points, rounded); `scripts/export_pith.py` exports a single model.
 
 Fallbacks:
 - **Knots:** without `--knot_root`, the builder uses YOLO11n-seg @800 (`yolo11n_seg_v5_val10_800`,
@@ -71,7 +70,12 @@ Fallbacks:
   `ann_pipeline/DETECTOR_PROVENANCE.md`).
 - **Pith:** without `--pith_root`, the builder uses the snapped 2-class OBB pith.
 
-Phase2 pre-labels on unreviewed logs still come from the older propagation pipeline until replaced.
+Phase2 pre-labels on the unreviewed frames (logs 3, 05, 06, 09 and the 271 untagged frames of 08) were
+replaced with this default on 2026-10-09. The upload is `logs/phase2_deploy_20261009/upload_prelabels.py`;
+it skips `bumaska` frames. The previous pre-labels are backed up in
+`/mnt/D/datasets/ct_log/backups/phase2_prelabels_before_ensemble_20261009_1803`.
+On 2026-10-15 the same frames were replaced again with the single model M5 (E1, EffV2-S dec512, 48 epochs),
+which matches the ensemble in pixel IoU and beats it on instance metrics; details in `ann_pipeline/PHASES.md`.
 
 ## Detector: single 2-class OBB (knot + pith)
 
