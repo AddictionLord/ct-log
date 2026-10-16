@@ -14,7 +14,7 @@ from ultralytics import YOLO
 
 from ann_pipeline.knot.data_prep import decode_bitmap
 from ann_pipeline.scripts.upload_ct_logs_to_phases import _bitmap_object, _largest_cc_fill, _point_object, _yolo_pith
-from ann_pipeline.wood.detectors import threshold_peel
+from ann_pipeline.wood.detectors import threshold_largest_cc, threshold_peel
 
 RAW_ROOTS = [pathlib.Path("/mnt/D/datasets/ct_log/generated"), pathlib.Path("/mnt/D/datasets/ct_log/375492_SM_2025")]
 SNAP = pathlib.Path("/mnt/D/datasets/ct_log/human_reviewed_20260929")
@@ -23,8 +23,53 @@ DEFAULT_SEG_IMGSZ = 800
 DEFAULT_OBB_WEIGHTS = "ann_pipeline/out/knot_runs/yolo11n_obb_2cls_v5_n640/weights/best.pt"
 
 
+WOOD_SOURCES = ("model", "peel", "lcc")
+KNOT_RULES = ("argmax", "prob")
+PITH_SOURCES = ("model", "obb")
+BG, WOOD, KNOT = 0, 1, 2
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    args = build_parser().parse_args()
+    validate(args)
+    out_root = pathlib.Path(args.out_root)
+    human_root = pathlib.Path(args.human_root)
+    seg, obb = YOLO(args.seg_weights), YOLO(args.obb_weights)
+    stats: Dict[str, dict] = {}
+    for log in args.auto_logs:
+        piths = None
+        if args.pith_source == "model":
+            piths = load_piths(pathlib.Path(args.pith_root or args.model_root), log)
+        knot_root = args.knot_root or args.model_root
+        knots = KnotSource(pathlib.Path(knot_root) / log, args.knot_threshold) if knot_root else None
+        classes = ClassSource(pathlib.Path(args.model_root) / log) if needs_class_map(args) else None
+        stats[log] = build_auto_log(
+            log,
+            out_root,
+            human_root,
+            seg,
+            obb,
+            args.conf,
+            args.seg_imgsz,
+            piths,
+            knots,
+            classes,
+            args.wood_source,
+            args.knot_rule,
+        )
+        if knots is not None and args.knot_rule == "prob":
+            stats[log]["knot_inputs_sha256"] = knots.digest()
+        if classes is not None:
+            stats[log]["class_map_inputs_sha256"] = classes.digest()
+    for log in args.human_logs:
+        stats[log] = build_human_log(log, out_root, human_root)
+    write_record(args, out_root, stats)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build a kwp dataset: auto logs labelled from one model run (default) or the legacy mix."
+    )
     parser.add_argument("--version", required=True)
     parser.add_argument("--out_root", required=True)
     parser.add_argument("--seg_weights", default=DEFAULT_SEG_WEIGHTS)
@@ -38,21 +83,28 @@ def main() -> None:
     parser.add_argument("--knot_root", default="")
     parser.add_argument("--knot_threshold", type=int, default=128)
     parser.add_argument("--knot_source", default="")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--model_root",
+        default="",
+        help="scripts/export_model_outputs.py output: <log>/page_XXX.cls.png, <log>/page_XXX.png, <log>.json.",
+    )
+    parser.add_argument("--wood_source", choices=WOOD_SOURCES, default="model")
+    parser.add_argument("--knot_rule", choices=KNOT_RULES, default="argmax")
+    parser.add_argument("--pith_source", choices=PITH_SOURCES, default="model")
+    return parser
 
-    out_root = pathlib.Path(args.out_root)
-    human_root = pathlib.Path(args.human_root)
-    seg, obb = YOLO(args.seg_weights), YOLO(args.obb_weights)
-    stats: Dict[str, dict] = {}
-    for log in args.auto_logs:
-        piths = load_piths(pathlib.Path(args.pith_root), log) if args.pith_root else None
-        knots = KnotSource(pathlib.Path(args.knot_root) / log, args.knot_threshold) if args.knot_root else None
-        stats[log] = build_auto_log(log, out_root, human_root, seg, obb, args.conf, args.seg_imgsz, piths, knots)
-        if knots is not None:
-            stats[log]["knot_inputs_sha256"] = knots.digest()
-    for log in args.human_logs:
-        stats[log] = build_human_log(log, out_root, human_root)
-    write_record(args, out_root, stats)
+
+def validate(args: argparse.Namespace) -> None:
+    if needs_class_map(args) and not args.model_root:
+        msg = "--wood_source model / --knot_rule argmax need --model_root"
+        raise ValueError(msg)
+    if args.pith_source == "model" and not (args.pith_root or args.model_root):
+        msg = "--pith_source model needs --model_root or --pith_root"
+        raise ValueError(msg)
+
+
+def needs_class_map(args: argparse.Namespace) -> bool:
+    return args.wood_source == "model" or args.knot_rule == "argmax"
 
 
 def raw_img_dir(log: str) -> pathlib.Path:
@@ -86,6 +138,9 @@ def build_auto_log(
     imgsz: int,
     piths: Optional[Dict[str, Optional[List[float]]]],
     knots: Optional["KnotSource"] = None,
+    classes: Optional["ClassSource"] = None,
+    wood_source: str = "peel",
+    knot_rule: str = "prob",
 ) -> dict:
     out_dir = out_root / log
     pages = link_images(log, out_dir)
@@ -99,7 +154,7 @@ def build_auto_log(
             ann = json.loads(hp.read_text())
             n_human += 1
         else:
-            ann = auto_annotation(p, seg, obb, conf, imgsz, piths, knots)
+            ann = auto_annotation(p, seg, obb, conf, imgsz, piths, knots, classes, wood_source, knot_rule)
         objs = [o for o in ann["objects"] if o.get("classTitle") == "Knot"]
         n_knot += bool(objs)
         knot_px += sum(knot_pixels(o) for o in objs)
@@ -122,18 +177,24 @@ def auto_annotation(
     imgsz: int,
     piths: Optional[Dict[str, Optional[List[float]]]] = None,
     knots: Optional["KnotSource"] = None,
+    classes: Optional["ClassSource"] = None,
+    wood_source: str = "peel",
+    knot_rule: str = "prob",
 ) -> dict:
     arr = np.array(Image.open(page))
     gray = (arr[..., :3].mean(-1) if arr.ndim == 3 else arr).astype(np.uint8)
     rgb = np.stack([gray] * 3, -1)
     h, w = gray.shape
-    if knots is not None:
+    cls = classes.labels(page.name, (h, w)) if classes is not None else None
+    if knot_rule == "argmax":
+        knot = cls == KNOT
+    elif knots is not None:
         knot = knots.mask(page.name, (h, w))
     else:
         r = seg.predict(rgb, conf=conf, imgsz=imgsz, retina_masks=True, verbose=False)[0]
         has = r.masks is not None and len(r.masks)
         knot = (r.masks.data.cpu().numpy() > 0.5).any(0) if has else np.zeros((h, w), bool)
-    wood = _largest_cc_fill(threshold_peel(gray, 30, 60, 5).astype(bool) | knot).astype(bool)
+    wood = wood_mask(gray, knot, cls, wood_source)
     knot &= wood
     objects: List[dict] = []
     lab, n = ndi.label(knot, structure=np.ones((3, 3), np.uint8))
@@ -148,6 +209,14 @@ def auto_annotation(
     if pith is not None:
         objects.append(_point_object("Pith", *pith))
     return {"size": {"height": h, "width": w}, "description": "", "tags": [], "objects": objects}
+
+
+def wood_mask(gray: np.ndarray, knot: np.ndarray, cls: Optional[np.ndarray], wood_source: str) -> np.ndarray:
+    if wood_source == "model":
+        return _largest_cc_fill(cls != BG).astype(bool)
+    if wood_source == "lcc":
+        return _largest_cc_fill(threshold_largest_cc(gray, 30).astype(bool) | knot).astype(bool)
+    return _largest_cc_fill(threshold_peel(gray, 30, 60, 5).astype(bool) | knot).astype(bool)
 
 
 def load_piths(root: pathlib.Path, log: str) -> Dict[str, Optional[List[float]]]:
@@ -211,10 +280,41 @@ class KnotSource:
         return hashlib.sha256("\n".join(sorted(self.hashes)).encode()).hexdigest()
 
 
+class ClassSource:
+    def __init__(self, log_dir: pathlib.Path) -> None:
+        if not log_dir.is_dir():
+            msg = "no model output dir %s" % log_dir
+            raise ValueError(msg)
+        self.log_dir = log_dir
+        self.hashes: List[str] = []
+
+    def labels(self, page_name: str, shape: Tuple[int, int]) -> np.ndarray:
+        path = self.log_dir / page_name.replace(".tiff", ".cls.png")
+        if not path.exists():
+            msg = "missing class map %s" % path
+            raise ValueError(msg)
+        self.hashes.append("%s %s" % (hashlib.sha256(path.read_bytes()).hexdigest(), path.name))
+        cls = np.array(Image.open(path))
+        if cls.shape != shape:
+            msg = "class map %s has shape %s, expected %s" % (path, cls.shape, shape)
+            raise ValueError(msg)
+        return cls
+
+    def digest(self) -> str:
+        return hashlib.sha256("\n".join(sorted(self.hashes)).encode()).hexdigest()
+
+
 def knot_record(args: argparse.Namespace) -> dict:
-    if args.knot_root:
+    if args.knot_rule == "argmax":
         return {
-            "source": "external per-slice knot probabilities from %s" % args.knot_root,
+            "source": "model argmax == knot from %s" % args.model_root,
+            "description": args.knot_source,
+            "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
+            "per_log_inputs_sha256": "see logs.<log>.class_map_inputs_sha256",
+        }
+    if args.knot_root or args.model_root:
+        return {
+            "source": "external per-slice knot probabilities from %s" % (args.knot_root or args.model_root),
             "description": args.knot_source,
             "threshold": "p >= %d/255" % args.knot_threshold,
             "post": "clipped to wood, one Knot object per 8-connected component, no other filters",
@@ -230,8 +330,8 @@ def knot_record(args: argparse.Namespace) -> dict:
 
 
 def pith_record(args: argparse.Namespace) -> dict:
-    if args.pith_root:
-        root = pathlib.Path(args.pith_root)
+    if args.pith_source == "model":
+        root = pathlib.Path(args.pith_root or args.model_root)
         meta_path = root / "META.json"
         return {
             "source": "external per-slice pith points from %s" % root,
@@ -242,6 +342,26 @@ def pith_record(args: argparse.Namespace) -> dict:
         "sha256": sha256(pathlib.Path(args.obb_weights)),
         "conf": 0.10,
         "post": "highest-confidence pith box centre snapped to the darkest pixel in a 5x5 window (upload_ct_logs_to_phases._yolo_pith)",
+    }
+
+
+WOOD_DESCRIPTION = {
+    "model": "largest_cc_fill(model argmax in {wood, knot})",
+    "peel": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+    "lcc": "largest_cc_fill(threshold_largest_cc(gray, 30) | knot)",
+}
+
+
+def model_record(args: argparse.Namespace) -> Optional[dict]:
+    if not args.model_root:
+        return None
+    meta_path = pathlib.Path(args.model_root) / "META.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    return {
+        "root": args.model_root,
+        "name": meta.get("name"),
+        "checkpoint": meta.get("checkpoint"),
+        "checkpoint_sha256": meta.get("checkpoint_sha256"),
     }
 
 
@@ -265,9 +385,13 @@ def write_record(args: argparse.Namespace, out_root: pathlib.Path, stats: Dict[s
         "git_commit": commit,
         "git_dirty": dirty,
         "generator": {
+            "wood_source": args.wood_source,
+            "knot_rule": args.knot_rule,
+            "pith_source": args.pith_source,
+            "model": model_record(args),
             "knot": knot_record(args),
             "pith": pith_record(args),
-            "wood": "largest_cc_fill(threshold_peel(gray, 30, 60, 5) | knot)",
+            "wood": WOOD_DESCRIPTION[args.wood_source],
             "human_root": args.human_root,
         },
         "logs": stats,

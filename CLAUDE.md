@@ -36,46 +36,51 @@ Option 1 (point seeds + 20 anchors) gives the best results on any wood type
 and is the recommended deployment path. Option 2 is the zero-effort fallback
 for softwood. Option 3 is the simplest code path but covers fewer frames.
 
-## Auto-annotation default: ensemble of two v4 U-Nets (decided 2026-10-09)
+## Auto-annotation default: all classes from M5 (decided 2026-10-16)
 
-Knots and pith for auto annotation come from the probability average of two smp U-Nets trained on
-kwp-ds-v4 (teacher split: auto logs + human 1, 2, 4, 08; log 10 held out), no test-time augmentation:
-- EfficientNetV2-S: `src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts.yaml`, checkpoint sha256 `0a7f6dee4cd4…`;
-- ConvNeXt-S: `src/configs/train_kwp_v4_unet_convnext_small_w1_dice_ts.yaml`, checkpoint sha256 `0a99076ce66d…`.
+Pre-labels for knots, wood and pith come from one run of **M5**, a single smp U-Net trained on kwp-ds-v4
+(teacher split: auto logs + human 1, 2, 4, 08; log 10 held out), no test-time augmentation:
+- config `src/configs/train_kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512.yaml` (EfficientNetV2-S encoder,
+  512-256-128-64-32 decoder, 48 epochs, EMA);
+- checkpoint `ckpt_local/kwp_v4_unet_effv2s_w1_dice_ts_48ep_dec512/kwp-v4-unet-effv2s-w1-dice-ts-48ep-dec512_periodic/seg_head_epoch_47.pth`
+  on euler (epoch 48 of 48), sha256 `228ed1059172…`; a copy is on Vostro at `/mnt/D/models/ct_log/m5/`.
 
-Both checkpoints are on euler under `ckpt_local/kwp_v4_unet_*_w1_dice_ts/*/seg_head_epoch_11.pth`.
+Rules (the `build_kwp_dataset.py` defaults):
+- **Knots** (`--knot_rule argmax`): 3-class argmax == knot.
+- **Wood** (`--wood_source model`): argmax in {wood, knot}, largest component, holes filled.
+- **Pith** (`--pith_source model`): the model's soft-argmax point, rounded to the pixel, no snap.
 
-Knots = mean knot softmax >= 0.5. Pith = mean of the two soft-argmax points, rounded to the pixel, no snap.
-Wood stays `threshold_peel`; the U-Net wood (IoU 0.987) is not used by the builder.
+On held-out log 10 (native 778, human GT; `report_2026-10/m5_all_classes.json`, `bootstrap_instance_e1.json`):
+- **Knots:** pixel IoU 0.763, level with the previous M4 ensemble of two v4 U-Nets (+0.001 [−0.007, +0.009]).
+  Per-knot IoU is 0.728 vs 0.703 for M4 (+0.025 [+0.015, +0.038]), mAP50 +0.034, thin-knot recall +0.13.
+  argmax vs softmax >= 0.5 differs by 165 px over 293 slices (metrics identical to 3 decimals).
+- **Wood** (GT = human Wood ∪ Knot): IoU 0.9916 vs 0.9954 for `threshold_peel`, no slice below 0.95 for
+  either. The human Wood was made by correcting peel pre-labels and keeps the bark shell inside Wood, which
+  favours peel; the model trims the outer layer more tightly (it undershoots GT on train logs 1/2/4 by
+  80–220 px per slice, peel overshoots by 130–260).
+- **Pith:** mean 0.383 px, 67 % on the exact pixel, 95 % within 1 px (M4 ensemble 0.385; snapped OBB 0.443).
 
-On held-out log 10 (native 778, pooled):
-- **Knot IoU 0.763**, vs 0.753 for one v4 U-Net, 0.750 for YOLO11n-seg @800 and 0.672 for DINOv3.
-- **Pith:** 67 % on the exact pixel, 95 % within 1 px, mean 0.38 px.
+Producing the input: `scripts/export_model_outputs.py --config <cfg> --checkpoint <ckpt> --name M5
+--data_root <root> --logs ... --out_root <model_root>` writes, from one model run per slice,
+`<log>/page_XXX.cls.png` (argmax), `<log>/page_XXX.png` (knot probability, uint8) and `<log>.json` (pith).
+The builder reads it with `--model_root`. DATASET.json records `wood_source`, `knot_rule`, `pith_source`
+and the checkpoint sha256. Exports on euler use bf16 autocast; Vostro's GTX 1650 runs fp32, which moves a
+few knot pixels and ~1 % of pith points by 1 px.
 
-Evidence is in `SEGMENTATION.md`:
-- On identical training data, U-Net and YOLO knots are level (the U-Net's gain comes from better
-  pseudo-labels and averaging).
-- 8-way TTA adds only +0.002 on top of the average, at 8x the cost.
-- Distilling the ensemble into one model (kwp-ds-v5) lost 0.007.
-
-Producing the inputs for `build_kwp_dataset.py`:
-- **Knots:** `scripts/export_ensemble_probs.py --member <cfg>=<ckpt> --member <cfg>=<ckpt>` (no
-  `--tta`) writes per-slice probability PNGs, which go to `--knot_root`.
-- **Pith:** per-log JSON via `--pith_root`. `scripts/export_ensemble_pith.py --member name=<cfg>=<ckpt>`
-  exports the ensemble (mean of the two points, rounded); `scripts/export_pith.py` exports a single model.
-
-Fallbacks:
-- **Knots:** without `--knot_root`, the builder uses YOLO11n-seg @800 (`yolo11n_seg_v5_val10_800`,
-  conf 0.25). It was the previous default (0.750 on log 10; provenance in
+Fallbacks via flags:
+- `--knot_rule prob` thresholds the knot probability (`--knot_threshold`, default 128) from `--knot_root`
+  or `--model_root`; with neither, YOLO11n-seg @800 (`yolo11n_seg_v5_val10_800`, conf 0.25; provenance in
   `ann_pipeline/DETECTOR_PROVENANCE.md`).
-- **Pith:** without `--pith_root`, the builder uses the snapped 2-class OBB pith.
+- `--wood_source peel` (`threshold_peel`, see below) or `lcc` (`threshold_largest_cc`, t=30).
+- `--pith_source model` reads `--pith_root` when given (e.g. `scripts/export_pith.py` or
+  `scripts/export_ensemble_pith.py` output); `--pith_source obb` uses the snapped 2-class OBB pith.
+- `--wood_source peel --knot_rule prob --knot_root <probs> --pith_root <pith>` reproduces the 2026-10-09
+  (ensemble) and 2026-10-15 (M5) builds byte for byte; `--wood_source peel --knot_rule prob --pith_source obb`
+  without roots is the older YOLO + OBB builder.
 
-Phase2 pre-labels on the unreviewed frames (logs 3, 05, 06, 09 and the 271 untagged frames of 08) were
-replaced with this default on 2026-10-09. The upload is `logs/phase2_deploy_20261009/upload_prelabels.py`;
-it skips `bumaska` frames. The previous pre-labels are backed up in
-`/mnt/D/datasets/ct_log/backups/phase2_prelabels_before_ensemble_20261009_1803`.
-On 2026-10-15 the same frames were replaced again with the single model M5 (E1, EffV2-S dec512, 48 epochs),
-which matches the ensemble in pixel IoU and beats it on instance metrics; details in `ann_pipeline/PHASES.md`.
+Phase2 history: the unreviewed frames (logs 3, 05, 06, 09 and the 271 untagged frames of 08) got the M4
+ensemble on 2026-10-09 and M5 knots + pith with peel wood on 2026-10-15 (backups and details in
+`ann_pipeline/PHASES.md`); the all-classes-from-M5 default has not been uploaded yet.
 
 ## Detector: single 2-class OBB (knot + pith)
 
@@ -127,7 +132,8 @@ bark ring by ~1200px on average. `threshold_peel` (in
 boundary pixels (intensity < 60) — reduces bark overshoot to ~374px with
 minimal wood loss. No model needed, ~11 it/s.
 
-Phase2 auto annotations use the peel detector for wood.
+Peel is no longer the builder default (model wood is, since 2026-10-16); it stays available as
+`--wood_source peel` and is what the Phase2 pre-labels uploaded up to 2026-10-15 used.
 
 ## Training runs and experiment tracking
 
