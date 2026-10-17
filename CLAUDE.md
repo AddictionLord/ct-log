@@ -135,6 +135,13 @@ minimal wood loss. No model needed, ~11 it/s.
 Peel is no longer the builder default (model wood is, since 2026-10-16); it stays available as
 `--wood_source peel` and is what the Phase2 pre-labels uploaded up to 2026-10-15 used.
 
+## Thin knots: radial / knot-axis views (closed 2026-10-17)
+
+Radial planes, knot-axis planes, a z-consistency post-step and a z±1 context ablation on log 10 gave no
+model-side gain on thin knots; M4 → M5 was the gain (thin found 28 → 33 of 39). The 6 remaining M5 misses
+are faint second slices or partial-volume tails, i.e. a labelling-convention question. Details, numbers,
+regeneration commands and open follow-ups: `RADIAL.md` (code in `scripts/radial/`).
+
 ## Training runs and experiment tracking
 
 Agents that launch, monitor or report training (locally or on euler.mendelu.cz) must follow
